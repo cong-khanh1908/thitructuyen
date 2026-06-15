@@ -191,13 +191,6 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   .screen-centered{align-items:flex-start}
   .login-card,.exam-portal-card,.result-card{margin-top:16px;margin-bottom:16px}
 }
-/* ── BÀNG PHÍM NGÀY SINH ── */
-.dkb{padding:11px 6px;font-size:1.05rem;font-weight:600;border:1.5px solid var(--border);border-radius:9px;background:#fafbff;color:var(--text);cursor:pointer;transition:all .12s;line-height:1}
-.dkb:active{background:var(--primary);color:#fff;border-color:var(--primary);transform:scale(.94)}
-.dkb-slash{background:#fff7ed;border-color:#fb923c;color:#ea580c;font-size:1.2rem}
-.dkb-slash:active{background:#ea580c;color:#fff;border-color:#ea580c}
-.dkb-del{background:#fef2f2;border-color:#fca5a5;color:#dc2626}
-.dkb-del:active{background:#dc2626;color:#fff;border-color:#dc2626}
 </style>
 </head>
 <body>
@@ -259,37 +252,23 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
       <p style="color:var(--text-muted)">Vui lòng điền đầy đủ thông tin trước khi thi</p>
     </div>
     <div class="fg"><label class="fl"><i class="fas fa-user me-1"></i>Họ và tên <span style="color:red">*</span></label><input class="fc" id="inp-name" placeholder="Nguyễn Văn A"></div>
-    <div class="fg" style="position:relative">
+    <div class="fg">
       <label class="fl"><i class="fas fa-calendar me-1"></i>Ngày sinh <span style="color:red">*</span></label>
-      <input class="fc" id="inp-dob" type="text" inputmode="none" maxlength="10"
-             placeholder="ngày/tháng/năm (vd: 15/05/1990)" autocomplete="off"
-             readonly style="cursor:pointer;caret-color:transparent"
-             onfocus="showDobKb()" onclick="showDobKb()">
-      <div id="dob-hint" style="display:none;font-size:.76rem;margin-top:5px;padding:5px 10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:7px;color:#1d4ed8;line-height:1.5"></div>
-      <!-- ── BÀNG PHÍM NGÀY SINH ── -->
-      <div id="dob-kb" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 6px);z-index:300;background:#fff;border:2px solid var(--primary);border-radius:16px;box-shadow:0 16px 40px rgba(26,58,107,.22);padding:14px 12px 12px;user-select:none">
-        <!-- preview -->
-        <div id="dob-preview" style="text-align:center;font-size:1.35rem;font-weight:700;color:var(--primary);letter-spacing:3px;background:#f0f4ff;border-radius:9px;padding:7px 0;margin-bottom:10px;min-height:42px;font-variant-numeric:tabular-nums">__/__/____</div>
-        <!-- phím số -->
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px">
-          <button type="button" class="dkb" onclick="dobKp('7')">7</button>
-          <button type="button" class="dkb" onclick="dobKp('8')">8</button>
-          <button type="button" class="dkb" onclick="dobKp('9')">9</button>
-          <button type="button" class="dkb" onclick="dobKp('4')">4</button>
-          <button type="button" class="dkb" onclick="dobKp('5')">5</button>
-          <button type="button" class="dkb" onclick="dobKp('6')">6</button>
-          <button type="button" class="dkb" onclick="dobKp('1')">1</button>
-          <button type="button" class="dkb" onclick="dobKp('2')">2</button>
-          <button type="button" class="dkb" onclick="dobKp('3')">3</button>
-          <button type="button" class="dkb dkb-slash" onclick="dobKp('/')"><b>/</b></button>
-          <button type="button" class="dkb" onclick="dobKp('0')">0</button>
-          <button type="button" class="dkb dkb-del" onclick="dobKpDel()">⌫</button>
-        </div>
-        <div style="display:flex;gap:7px;margin-top:9px">
-          <button type="button" onclick="hideDobKb()" style="flex:1;padding:9px;border:1.5px solid var(--border);border-radius:9px;background:#fff;color:var(--text-muted);font-weight:600;cursor:pointer">Hủy</button>
-          <button type="button" onclick="dobKbDone()" style="flex:2;padding:9px;background:var(--primary);color:#fff;border:none;border-radius:9px;font-weight:700;cursor:pointer;font-size:.95rem">✔ Xác nhận</button>
-        </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <input class="fc" id="dob-d" type="text" inputmode="numeric" maxlength="2" placeholder="DD"
+               style="width:64px;text-align:center;font-size:1.1rem;font-weight:600;padding:10px 6px"
+               oninput="dobPartInput(this,'dob-m',2)" onkeydown="dobPartKey(event,null,'dob-m')">
+        <span style="font-size:1.3rem;font-weight:700;color:var(--text-muted);flex-shrink:0">/</span>
+        <input class="fc" id="dob-m" type="text" inputmode="numeric" maxlength="2" placeholder="MM"
+               style="width:64px;text-align:center;font-size:1.1rem;font-weight:600;padding:10px 6px"
+               oninput="dobPartInput(this,'dob-y',2)" onkeydown="dobPartKey(event,'dob-d','dob-y')">
+        <span style="font-size:1.3rem;font-weight:700;color:var(--text-muted);flex-shrink:0">/</span>
+        <input class="fc" id="dob-y" type="text" inputmode="numeric" maxlength="4" placeholder="YYYY"
+               style="flex:1;text-align:center;font-size:1.1rem;font-weight:600;padding:10px 6px"
+               oninput="dobPartInput(this,null,4)" onkeydown="dobPartKey(event,'dob-m',null)">
       </div>
+      <!-- input ẩn gộp giá trị cuối -->
+      <input type="hidden" id="inp-dob">
     </div>
     <div class="fg" style="position:relative">
       <label class="fl"><i class="fas fa-building me-1"></i>Đơn vị <span style="color:red">*</span></label>
@@ -705,198 +684,55 @@ function setupUnitAutocomplete() {
   });
 }
 
-// ─── DATE INPUT — BÀN PHÍM + SMART PARSE ─────────────
-var _dobRaw = ''; // chuỗi thô người dùng đang gõ (chỉ số + dấu /)
-
-/* Cập nhật preview trong bàn phím */
-function _dobRefreshPreview() {
-  var raw = _dobRaw;
-  // Nếu người dùng tự gõ dấu / thì dùng luôn
-  var parts = raw.split('/');
-  var d = '', mo = '', y = '';
-  if (parts.length >= 3) { d = parts[0]; mo = parts[1]; y = parts[2]; }
-  else if (parts.length === 2) { d = parts[0]; mo = parts[1]; }
-  else { d = parts[0]; }
-  var dS  = (d  + '__').slice(0,2);
-  var mS  = (mo + '__').slice(0,2);
-  var yS  = (y  + '____').slice(0,4);
-  var el = document.getElementById('dob-preview');
-  if (el) el.textContent = dS + '/' + mS + '/' + yS;
-}
-
-/* Mở bàn phím */
-function showDobKb() {
-  var kb = document.getElementById('dob-kb');
-  var hint = document.getElementById('dob-hint');
-  if (!kb) return;
-  // Lấy giá trị hiện có nếu đã nhập trước
-  var cur = (document.getElementById('inp-dob').value || '').trim();
-  _dobRaw = cur;
-  kb.style.display = 'block';
-  if (hint) hint.style.display = 'none';
-  _dobRefreshPreview();
-  // Đóng khi click ngoài
-  setTimeout(function() {
-    document.addEventListener('mousedown', _dobOutside);
-    document.addEventListener('touchstart', _dobOutside, { passive: true });
-  }, 50);
-}
-
-function _dobOutside(e) {
-  var kb = document.getElementById('dob-kb');
-  var inp = document.getElementById('inp-dob');
-  if (kb && !kb.contains(e.target) && e.target !== inp) hideDobKb();
-}
-
-function hideDobKb() {
-  var kb = document.getElementById('dob-kb');
-  if (kb) kb.style.display = 'none';
-  document.removeEventListener('mousedown', _dobOutside);
-  document.removeEventListener('touchstart', _dobOutside);
-}
-
-/* Nhấn phím */
-function dobKp(ch) {
-  if (ch === '/') {
-    // Cho phép tối đa 2 dấu /
-    var slashCount = (_dobRaw.match(/\//g) || []).length;
-    if (slashCount >= 2) return;
-    // Không cho / ở đầu hoặc / liên tiếp
-    if (!_dobRaw || _dobRaw.slice(-1) === '/') return;
-    _dobRaw += '/';
-  } else {
-    // Giới hạn độ dài: ngày(2)+tháng(2)+năm(4)+2dấu/ = 10
-    if (_dobRaw.length >= 10) return;
-    _dobRaw += ch;
+// ─── DATE INPUT 3 Ô (DD / MM / YYYY) ─────────────────
+function dobPartInput(el, nextId, maxLen) {
+  // Chỉ giữ số
+  el.value = el.value.replace(/\D/g, '');
+  // Tự động nhảy sang ô tiếp theo khi đủ ký tự
+  if (nextId && el.value.length >= maxLen) {
+    var next = document.getElementById(nextId);
+    if (next) { next.focus(); next.select(); }
   }
-  _dobRefreshPreview();
+  syncDobHidden();
 }
 
-/* Xóa 1 ký tự */
-function dobKpDel() {
-  if (_dobRaw.length === 0) return;
-  _dobRaw = _dobRaw.slice(0, -1);
-  _dobRefreshPreview();
-}
-
-/* Xác nhận — smart parse rồi đưa vào input */
-function dobKbDone() {
-  var raw = _dobRaw.trim();
-  if (!raw) { toast('Vui lòng nhập ngày sinh!', 'error'); return; }
-  var parsed = smartParseDOB(raw);
-  if (!parsed) {
-    toast('Ngày sinh không hợp lệ! Vui lòng kiểm tra lại.', 'error');
-    return;
+function dobPartKey(e, prevId, nextId) {
+  // Backspace khi ô rỗng → quay về ô trước
+  if (e.key === 'Backspace' && e.target.value === '' && prevId) {
+    e.preventDefault();
+    var prev = document.getElementById(prevId);
+    if (prev) { prev.focus(); prev.setSelectionRange(prev.value.length, prev.value.length); }
   }
-  var el = document.getElementById('inp-dob');
-  el.value = parsed;
-  hideDobKb();
-  // Hiện hint nếu đã tự động điều chỉnh format
-  if (parsed !== raw) {
-    var hint = document.getElementById('dob-hint');
-    if (hint) { hint.style.display = 'block'; hint.innerHTML = '✅ Đã nhận: <strong>' + parsed + '</strong>'; }
+  // ArrowLeft / ArrowRight để di chuyển giữa các ô
+  if (e.key === 'ArrowRight' && nextId && e.target.selectionStart === e.target.value.length) {
+    document.getElementById(nextId).focus();
+  }
+  if (e.key === 'ArrowLeft' && prevId && e.target.selectionStart === 0) {
+    document.getElementById(prevId).focus();
   }
 }
 
-/* ── SMART PARSE ──────────────────────────────────────
-   Hỗ trợ:
-   - DD/MM/YYYY  (đã có dấu /, chuẩn)
-   - D/M/YYYY   (ngày/tháng 1 chữ số)
-   - DDMMYYYY   (8 số, vd 19081993)
-   - DMMYYYY    (7 số, vd 1081993)
-   - DDMYYYY    (7 số, vd 1981993)  ← ví dụ đề bài
-   - DDMMYY     (6 số, vd 190893)   ← ví dụ đề bài
-   - DMMYY      (6 số, vd 181993 → thử nhiều cách)
-   - DMYYYY     (6 số, vd 111993 → 01/01/1993)
-   Năm 2 chữ số: ≥30 → 19xx, <30 → 20xx
-───────────────────────────────────────────────────── */
-function smartParseDOB(raw) {
-  // 1. Nếu đã có dấu / → chuẩn hóa ngày/tháng padding
-  if (raw.indexOf('/') !== -1) {
-    var pts = raw.split('/');
-    if (pts.length !== 3) return null;
-    var d2  = pts[0].padStart(2,'0');
-    var m2  = pts[1].padStart(2,'0');
-    var y4  = pts[2].length === 2 ? expandYear(pts[2]) : pts[2];
-    var cand = d2 + '/' + m2 + '/' + y4;
-    return isValidDOBStr(cand) ? cand : null;
-  }
-
-  // 2. Chỉ có chữ số
-  var digits = raw.replace(/\D/g, '');
-  var len = digits.length;
-
-  // 8 số: DDMMYYYY
-  if (len === 8) {
-    return tryParseParts(digits.slice(0,2), digits.slice(2,4), digits.slice(4,8));
-  }
-
-  // 7 số: thử DDMYYYY (ngày 2, tháng 1, năm 4) VÀ DMMYYYY (ngày 1, tháng 2, năm 4)
-  if (len === 7) {
-    var r1 = tryParseParts(digits.slice(0,2), '0'+digits[2], digits.slice(3,7));   // DDMYYYY
-    if (r1) return r1;
-    return tryParseParts('0'+digits[0], digits.slice(1,3), digits.slice(3,7));      // DMMYYYY
-  }
-
-  // 6 số: thử DDMMYY (năm 2 chữ số) rồi DMYYYY (ngày 1, tháng 1, năm 4)
-  if (len === 6) {
-    // DDMMYY
-    var r2 = tryParseParts(digits.slice(0,2), digits.slice(2,4), expandYear(digits.slice(4,6)));
-    if (r2) return r2;
-    // DMYYYY
-    var r3 = tryParseParts('0'+digits[0], '0'+digits[1], digits.slice(2,6));
-    if (r3) return r3;
-    // DMMYY (ngày 1, tháng 2, năm 2)
-    return tryParseParts('0'+digits[0], digits.slice(1,3), expandYear(digits.slice(3,5)));
-  }
-
-  return null;
+function syncDobHidden() {
+  var d  = (document.getElementById('dob-d').value  || '').padStart(2,'0');
+  var m  = (document.getElementById('dob-m').value  || '').padStart(2,'0');
+  var y  = (document.getElementById('dob-y').value  || '');
+  var hidden = document.getElementById('inp-dob');
+  if (hidden) hidden.value = d + '/' + m + '/' + y;
 }
 
-function expandYear(yy) {
-  var n = parseInt(yy, 10);
-  return (n >= 30 ? '19' : '20') + (n < 10 ? '0' : '') + n;
+function setupDateInput() {
+  // Không cần khởi tạo thêm — handler đặt inline trên từng input
 }
 
-function tryParseParts(d, m, y) {
-  var cand = d.padStart(2,'0') + '/' + m.padStart(2,'0') + '/' + y;
-  return isValidDOBStr(cand) ? cand : null;
-}
-
-function isValidDOBStr(str) {
-  var m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(str);
-  if (!m) return false;
-  var d = parseInt(m[1],10), mo = parseInt(m[2],10), y = parseInt(m[3],10);
+function isValidDOB(str) {
+  // str có dạng DD/MM/YYYY từ syncDobHidden
+  var mt = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(str);
+  if (!mt) return false;
+  var d = parseInt(mt[1],10), mo = parseInt(mt[2],10), y = parseInt(mt[3],10);
   if (mo < 1 || mo > 12) return false;
   if (y < 1900 || y > new Date().getFullYear()) return false;
   var dim = new Date(y, mo, 0).getDate();
   return d >= 1 && d <= dim;
-}
-
-function setupDateInput() {
-  // Input giờ readonly (dùng bàn phím popup), không cần listener input
-  // Nhưng vẫn cho phép gõ bàn phím vật lý (desktop) khi bàn phím ảo mở
-  var el = document.getElementById('inp-dob');
-  if (!el) return;
-  el.addEventListener('keydown', function(e) {
-    if (e.key === 'Backspace') { dobKpDel(); e.preventDefault(); return; }
-    if (e.key >= '0' && e.key <= '9') { dobKp(e.key); e.preventDefault(); return; }
-    if (e.key === '/') { dobKp('/'); e.preventDefault(); return; }
-    if (e.key === 'Enter') { dobKbDone(); e.preventDefault(); return; }
-    if (e.key === 'Escape') { hideDobKb(); }
-  });
-}
-
-function isValidDOB(str) {
-  // Thử smart-parse trước, rồi validate chuẩn
-  var parsed = smartParseDOB(str);
-  if (parsed) {
-    // Cập nhật ô input nếu đã điền bằng tay không qua bàn phím
-    var el = document.getElementById('inp-dob');
-    if (el && el.value !== parsed) el.value = parsed;
-    return true;
-  }
-  return false;
 }
 
 // ─── EXAM FLOW ────────────────────────────────────────
