@@ -2,7 +2,7 @@
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <title>Hệ thống Thi Trực Tuyến</title>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
@@ -13,11 +13,12 @@
 :root{--primary:#1a3a6b;--primary-light:#2756a8;--accent:#e8a020;--accent-dark:#c4860f;--success:#1e7e5e;--danger:#c0392b;--surface:#f5f7fb;--card-bg:#fff;--text:#1a1f2e;--text-muted:#6b7280;--border:#e2e8f0;--sidebar-w:260px}
 *{box-sizing:border-box}
 body{font-family:'Segoe UI',sans-serif;background:var(--surface);color:var(--text);margin:0}
-.screen{display:none;min-height:100vh}
+.screen{display:none;min-height:100vh;min-height:100dvh}
 .screen.active{display:flex;flex-direction:column}
+.screen-centered{justify-content:center;align-items:center;overflow-y:auto;padding:24px calc(16px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));padding-top:calc(24px + env(safe-area-inset-top))}
 /* LOGIN */
-#screen-login{background:linear-gradient(135deg,var(--primary) 0%,#0f2447 50%,#1a3a6b 100%);justify-content:center;align-items:center;position:relative}
-.login-card{background:white;border-radius:20px;padding:48px 40px;width:100%;max-width:420px;box-shadow:0 25px 60px rgba(0,0,0,.3)}
+#screen-login{background:linear-gradient(135deg,var(--primary) 0%,#0f2447 50%,#1a3a6b 100%)}
+.login-card{background:white;border-radius:20px;padding:48px 40px;width:100%;max-width:420px;box-shadow:0 25px 60px rgba(0,0,0,.3);margin:auto}
 /* ADMIN ACCESS ICON */
 .admin-access-btn{position:fixed;top:18px;right:18px;width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);color:rgba(255,255,255,.45);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s;z-index:20;font-size:.95rem}
 .admin-access-btn:hover{background:rgba(255,255,255,.2);color:#fff;transform:scale(1.06)}
@@ -29,9 +30,16 @@ body{font-family:'Segoe UI',sans-serif;background:var(--surface);color:var(--tex
 .btn-primary-custom:hover{background:var(--primary-light);transform:translateY(-1px)}
 .fcc{border:2px solid var(--border);border-radius:10px;padding:12px 16px;font-size:.95rem;transition:border-color .2s;width:100%}
 .fcc:focus{border-color:var(--primary);outline:none;box-shadow:0 0 0 3px rgba(26,58,107,.12)}
+/* UNIT AUTOCOMPLETE */
+.unit-sugg{display:none;position:absolute;left:0;right:0;top:100%;margin-top:4px;background:white;border:1.5px solid var(--border);border-radius:10px;box-shadow:0 12px 28px rgba(0,0,0,.12);max-height:220px;overflow-y:auto;z-index:30}
+.unit-sugg.show{display:block}
+.unit-sugg-item{padding:10px 14px;font-size:.9rem;cursor:pointer;border-bottom:1px solid #f1f5f9}
+.unit-sugg-item:last-child{border-bottom:none}
+.unit-sugg-item:hover,.unit-sugg-item.active{background:#f0f4ff;color:var(--primary)}
+.unit-sugg-empty{padding:10px 14px;font-size:.85rem;color:var(--text-muted)}
 /* EXAM PORTAL */
-#screen-exam-portal{background:linear-gradient(135deg,#1a3a6b 0%,#0d2137 100%);justify-content:center;align-items:center}
-.exam-portal-card{background:white;border-radius:24px;padding:48px;width:100%;max-width:500px;box-shadow:0 30px 80px rgba(0,0,0,.4)}
+#screen-exam-portal{background:linear-gradient(135deg,#1a3a6b 0%,#0d2137 100%)}
+.exam-portal-card{background:white;border-radius:24px;padding:48px;width:100%;max-width:500px;box-shadow:0 30px 80px rgba(0,0,0,.4);margin:auto}
 .exam-portal-card h2{color:var(--primary);font-weight:800;font-size:1.6rem}
 /* ADMIN */
 #screen-admin{flex-direction:row}
@@ -107,8 +115,8 @@ body{font-family:'Segoe UI',sans-serif;background:var(--surface);color:var(--tex
 .viol-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px}
 .viol-box{background:white;border-radius:20px;padding:40px;max-width:420px;text-align:center;width:100%}
 /* RESULT */
-#screen-result{background:linear-gradient(135deg,#1a3a6b 0%,#0d2137 100%);justify-content:center;align-items:center;padding:24px}
-.result-card{background:white;border-radius:24px;padding:48px;max-width:580px;width:100%;text-align:center;max-height:90vh;overflow-y:auto}
+#screen-result{background:linear-gradient(135deg,#1a3a6b 0%,#0d2137 100%)}
+.result-card{background:white;border-radius:24px;padding:48px;max-width:580px;width:100%;text-align:center;max-height:90vh;overflow-y:auto;margin:auto}
 .sc{width:140px;height:140px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 24px;position:relative;background:conic-gradient(var(--primary) 0deg,var(--primary) var(--deg,0deg),#e2e8f0 var(--deg,0deg))}
 .sci{width:110px;height:110px;border-radius:50%;background:white;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .sci .sn{font-size:2rem;font-weight:800;color:var(--primary);line-height:1}
@@ -148,7 +156,7 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   .sidebar{transform:translateX(-100%)}
   .sidebar.open{transform:translateX(0)}
   .admin-content{margin-left:0}
-  .topbar{padding:12px 16px}
+  .topbar{padding:12px 16px;padding-top:calc(12px + env(safe-area-inset-top))}
   .content-area{padding:16px}
   .exam-portal-card{padding:32px 24px}
   .qcard{padding:20px}
@@ -156,7 +164,32 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 }
 @media(max-width:480px){
   .login-card{padding:32px 24px}
+  .exam-portal-card{padding:28px 20px;border-radius:18px}
+  .login-card,.result-card{border-radius:18px}
   .timer-d .tv{font-size:1.3rem}
+  .exam-portal-card h2{font-size:1.3rem}
+  .login-logo h1{font-size:1.2rem}
+  .fg{margin-bottom:16px}
+  .admin-access-btn{width:38px;height:38px;font-size:.85rem}
+}
+@media(max-width:390px){
+  .exam-portal-card{padding:22px 16px}
+  .exam-portal-card h2{font-size:1.15rem}
+  .exam-portal-card > div:first-child{margin-bottom:20px!important}
+  .exam-portal-card > div:first-child > div{width:52px;height:52px}
+  .fl{font-size:.82rem}
+  .fc{padding:9px 12px;font-size:.875rem}
+}
+@media(max-height:700px){
+  .exam-portal-card > div:first-child{margin-bottom:16px!important}
+  .exam-portal-card > div:first-child > div{width:48px;height:48px;margin-bottom:8px!important}
+  .exam-portal-card h2{font-size:1.2rem;margin:4px 0}
+  .exam-portal-card p{margin-bottom:4px;font-size:.85rem}
+  .fg{margin-bottom:14px}
+}
+@media(orientation:landscape) and (max-height:500px){
+  .screen-centered{align-items:flex-start}
+  .login-card,.exam-portal-card,.result-card{margin-top:16px;margin-bottom:16px}
 }
 </style>
 </head>
@@ -164,7 +197,7 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 <div id="tc" class="toast-c"></div>
 
 <!-- ══ LOGIN / TRANG VÀO THI ══ -->
-<div id="screen-login" class="screen active">
+<div id="screen-login" class="screen screen-centered active">
   <button class="admin-access-btn" onclick="openAdminLogin()" title="Quản trị viên"><i class="fas fa-lock"></i></button>
   <div class="login-card">
     <div class="login-logo">
@@ -209,7 +242,7 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 
 
 <!-- ══ EXAM PORTAL ══ -->
-<div id="screen-exam-portal" class="screen">
+<div id="screen-exam-portal" class="screen screen-centered">
   <div class="exam-portal-card">
     <div style="text-align:center;margin-bottom:32px">
       <div style="width:64px;height:64px;background:var(--primary);border-radius:16px;display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px">
@@ -219,8 +252,12 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
       <p style="color:var(--text-muted)">Vui lòng điền đầy đủ thông tin trước khi thi</p>
     </div>
     <div class="fg"><label class="fl"><i class="fas fa-user me-1"></i>Họ và tên <span style="color:red">*</span></label><input class="fc" id="inp-name" placeholder="Nguyễn Văn A"></div>
-    <div class="fg"><label class="fl"><i class="fas fa-calendar me-1"></i>Ngày sinh <span style="color:red">*</span></label><input class="fc" id="inp-dob" type="date"></div>
-    <div class="fg"><label class="fl"><i class="fas fa-building me-1"></i>Đơn vị <span style="color:red">*</span></label><input class="fc" id="inp-unit" placeholder="Bệnh viện / Phòng ban"></div>
+    <div class="fg"><label class="fl"><i class="fas fa-calendar me-1"></i>Ngày sinh <span style="color:red">*</span></label><input class="fc" id="inp-dob" type="text" inputmode="numeric" maxlength="10" placeholder="ngày/tháng/năm (vd: 15/05/1990)" autocomplete="off"></div>
+    <div class="fg" style="position:relative">
+      <label class="fl"><i class="fas fa-building me-1"></i>Đơn vị <span style="color:red">*</span></label>
+      <input class="fc" id="inp-unit" placeholder="Bệnh viện / Phòng ban (gõ để tìm nhanh)" autocomplete="off">
+      <div id="unit-sugg" class="unit-sugg"></div>
+    </div>
     <div class="fg"><label class="fl"><i class="fas fa-phone me-1"></i>Số điện thoại <span style="color:red">*</span></label><input class="fc" id="inp-phone" type="tel" placeholder="0901234567"></div>
     <div style="display:flex;gap:12px;margin-top:8px">
       <button class="btn btn-outline-secondary flex-1" style="border-radius:10px;font-weight:600" onclick="showScreen('login')"><i class="fas fa-arrow-left me-1"></i>Quay lại</button>
@@ -271,7 +308,7 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 </div>
 
 <!-- ══ RESULT ══ -->
-<div id="screen-result" class="screen">
+<div id="screen-result" class="screen screen-centered">
   <div class="result-card">
     <div id="res-content">
       <div class="sc" id="res-circle"><div class="sci"><div class="sn" id="res-score">0</div><div class="st">/100 điểm</div></div></div>
@@ -462,6 +499,14 @@ function initData() {
   if (!DB.get('results'))   DB.set('results', []);
   if (!DB.get('examsets'))  DB.set('examsets', []);
   if (!DB.get('logs'))      DB.set('logs', []);
+  if (!DB.get('units')) {
+    DB.set('units', [
+      'Khoa Nội', 'Khoa Ngoại', 'Khoa Nhi', 'Khoa Sản', 'Khoa Cấp cứu',
+      'Khoa Hồi sức tích cực', 'Khoa Khám bệnh', 'Khoa Dược', 'Khoa Xét nghiệm',
+      'Khoa Chẩn đoán hình ảnh', 'Khoa Dinh dưỡng', 'Phòng Điều dưỡng',
+      'Phòng Tổ chức cán bộ', 'Phòng Kế hoạch tổng hợp', 'Phòng Công nghệ thông tin'
+    ]);
+  }
   if (!DB.get('config')) {
     DB.set('config', {
       examTitle: 'Hội thi Điều dưỡng giỏi 2026',
@@ -566,6 +611,86 @@ function togglePwd() {
   else { i.type = 'password'; e.className = 'fas fa-eye'; }
 }
 
+// ─── UNIT AUTOCOMPLETE (Khoa/Phòng) ───────────────────
+function normVN(str) {
+  return String(str).toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd');
+}
+
+function setupUnitAutocomplete() {
+  var inp = document.getElementById('inp-unit');
+  var box = document.getElementById('unit-sugg');
+  if (!inp || !box) return;
+  var activeIdx = -1;
+
+  function render(list, q) {
+    if (!list.length) {
+      box.innerHTML = q ? '<div class="unit-sugg-empty">Không tìm thấy — bạn có thể nhập tên đơn vị mới</div>' : '';
+      box.classList.toggle('show', !!q);
+      return;
+    }
+    box.innerHTML = list.map(function(u, i) {
+      return '<div class="unit-sugg-item' + (i===activeIdx?' active':'') + '" data-u="' + esc(u) + '">' + esc(u) + '</div>';
+    }).join('');
+    box.classList.add('show');
+    box.querySelectorAll('.unit-sugg-item').forEach(function(it) {
+      it.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        inp.value = it.getAttribute('data-u');
+        box.classList.remove('show');
+      });
+    });
+  }
+
+  function filterAndShow() {
+    var q = (inp.value || '').trim();
+    var units = DB.get('units') || [];
+    activeIdx = -1;
+    var list = q ? units.filter(function(u) { return normVN(u).indexOf(normVN(q)) !== -1; }) : units;
+    render(list.slice(0, 8), q);
+  }
+
+  inp.addEventListener('focus', filterAndShow);
+  inp.addEventListener('input', filterAndShow);
+  inp.addEventListener('keydown', function(e) {
+    var items = box.querySelectorAll('.unit-sugg-item');
+    if (!items.length || !box.classList.contains('show')) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); activeIdx = Math.min(activeIdx + 1, items.length - 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); activeIdx = Math.max(activeIdx - 1, 0); }
+    else if (e.key === 'Enter') { if (activeIdx >= 0) { e.preventDefault(); inp.value = items[activeIdx].getAttribute('data-u'); box.classList.remove('show'); } return; }
+    else return;
+    items.forEach(function(it,i){ it.classList.toggle('active', i===activeIdx); });
+  });
+  document.addEventListener('click', function(e) {
+    if (e.target !== inp && !box.contains(e.target)) box.classList.remove('show');
+  });
+}
+
+// ─── DATE INPUT (DD/MM/YYYY trực tiếp) ────────────────
+function setupDateInput() {
+  var el = document.getElementById('inp-dob');
+  if (!el) return;
+  el.addEventListener('input', function() {
+    var digits = el.value.replace(/[^0-9]/g, '').slice(0, 8);
+    var out = digits;
+    if (digits.length > 4) out = digits.slice(0,2) + '/' + digits.slice(2,4) + '/' + digits.slice(4);
+    else if (digits.length > 2) out = digits.slice(0,2) + '/' + digits.slice(2);
+    el.value = out;
+  });
+}
+
+function isValidDOB(str) {
+  var m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(str);
+  if (!m) return false;
+  var d = parseInt(m[1],10), mo = parseInt(m[2],10), y = parseInt(m[3],10);
+  if (mo < 1 || mo > 12) return false;
+  if (y < 1900 || y > new Date().getFullYear()) return false;
+  var daysInMonth = new Date(y, mo, 0).getDate();
+  if (d < 1 || d > daysInMonth) return false;
+  return true;
+}
+
 // ─── EXAM FLOW ────────────────────────────────────────
 function startExam() {
   var name  = (document.getElementById('inp-name').value  || '').trim();
@@ -573,6 +698,7 @@ function startExam() {
   var unit  = (document.getElementById('inp-unit').value  || '').trim();
   var phone = (document.getElementById('inp-phone').value || '').trim();
   if (!name || !dob || !unit || !phone) { toast('Vui lòng điền đầy đủ thông tin!', 'error'); return; }
+  if (!isValidDOB(dob)) { toast('Ngày sinh không hợp lệ! Vui lòng nhập theo dạng ngày/tháng/năm.', 'error'); return; }
 
   S.candidate = { name: name, dob: dob, unit: unit, phone: phone };
   var cfg = DB.get('config') || {};
@@ -1369,7 +1495,13 @@ function pgReports() {
 // ── SETTINGS ──
 function pgSettings() {
   var c = DB.get('config') || {};
+  var units = DB.get('units') || [];
   document.getElementById('apc').innerHTML =
+    '<div class="ss"><h6><i class="fas fa-hospital me-2"></i>Danh mục Khoa/Phòng (Đơn vị)</h6>' +
+    '<p style="color:var(--text-muted);font-size:.85rem;margin-top:-8px;margin-bottom:12px">Mỗi dòng là một khoa/phòng. Thí sinh sẽ gõ để tìm nhanh trong ô "Đơn vị" khi vào thi.</p>' +
+    '<div class="row g-3"><div class="col-12"><textarea class="fc" id="st-units" rows="8" style="font-family:inherit;line-height:1.8" placeholder="Khoa Nội&#10;Khoa Ngoại&#10;Khoa Nhi...">'+esc(units.join('\n'))+'</textarea></div></div>' +
+    '<button class="btn-primary-custom mt-3" style="width:auto;padding:10px 24px" onclick="saveUnits()"><i class="fas fa-save me-1"></i>Lưu danh mục</button>' +
+    '</div>' +
     '<div class="ss"><h6><i class="fas fa-user-shield me-2"></i>Tài khoản Quản trị viên</h6>' +
     '<div class="row g-3">' +
       '<div class="col-6"><label class="fl">Tên đăng nhập</label><input class="fc" id="st-au" value="'+esc(c.adminUser||'admin')+'"></div>' +
@@ -1397,6 +1529,18 @@ function pgSettings() {
     '</div></div>';
 }
 
+function saveUnits() {
+  var raw = document.getElementById('st-units').value || '';
+  var units = raw.split('\n').map(function(s){ return s.trim(); }).filter(function(s){ return s; });
+  // remove duplicates, preserve order
+  var seen = {}; var clean = [];
+  units.forEach(function(u){ var k = u.toLowerCase(); if(!seen[k]){ seen[k]=true; clean.push(u); } });
+  DB.set('units', clean);
+  addLog('SETTINGS','Cập nhật danh mục Khoa/Phòng ('+clean.length+' đơn vị)');
+  toast('Đã lưu danh mục Khoa/Phòng!','success');
+  pgSettings();
+}
+
 function saveAdminAccount() {
   var c = DB.get('config') || {};
   var u = (document.getElementById('st-au').value || '').trim();
@@ -1421,7 +1565,7 @@ function saveSettings() {
 }
 
 function backupData() {
-  var data = {questions:DB.get('questions'),results:DB.get('results'),examsets:DB.get('examsets'),config:DB.get('config'),logs:DB.get('logs')};
+  var data = {questions:DB.get('questions'),results:DB.get('results'),examsets:DB.get('examsets'),config:DB.get('config'),logs:DB.get('logs'),units:DB.get('units')};
   var blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   var url = URL.createObjectURL(blob);
   var a = document.createElement('a');
@@ -1440,6 +1584,7 @@ function restoreData() {
       try {
         var d = JSON.parse(ev.target.result);
         if(d.questions) DB.set('questions',d.questions);
+        if(d.units)     DB.set('units',d.units);
         if(d.results)   DB.set('results',d.results);
         if(d.examsets)  DB.set('examsets',d.examsets);
         if(d.config)    DB.set('config',d.config);
@@ -1508,6 +1653,8 @@ document.addEventListener('keydown', function(e) {
 
 // ─── BOOT ─────────────────────────────────────────────
 initData();
+setupDateInput();
+setupUnitAutocomplete();
 </script>
 </body>
 </html>
