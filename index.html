@@ -114,6 +114,11 @@ body{font-family:'Segoe UI',sans-serif;background:var(--surface);color:var(--tex
 /* VIOLATION */
 .viol-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px}
 .viol-box{background:white;border-radius:20px;padding:40px;max-width:420px;text-align:center;width:100%}
+/* FAB Nộp bài - luôn nổi trên violation modal */
+#submit-fab{position:fixed;bottom:24px;right:24px;z-index:10001;background:var(--accent);color:white;border:none;border-radius:14px;padding:14px 22px;font-weight:700;font-size:1rem;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,.35);display:none;align-items:center;gap:8px;transition:all .2s;animation:fab-pop .3s ease}
+#submit-fab:hover{background:var(--accent-dark);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.45)}
+#submit-fab.visible{display:flex}
+@keyframes fab-pop{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}
 /* RESULT */
 #screen-result{background:linear-gradient(135deg,#1a3a6b 0%,#0d2137 100%)}
 .result-card{background:white;border-radius:24px;padding:48px;max-width:580px;width:100%;text-align:center;max-height:90vh;overflow-y:auto;margin:auto}
@@ -404,8 +409,13 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   </div>
 </div>
 
+<!-- ══ FAB NỘP BÀI (luôn hiển thị khi thi, kể cả khi có violation modal) ══ -->
+<button id="submit-fab" onclick="showSubmitConfirm()" title="Nộp bài ngay">
+  <i class="fas fa-paper-plane"></i>Nộp bài
+</button>
+
 <!-- ══ SUBMIT MODAL ══ -->
-<div id="sub-modal" class="mc">
+<div id="sub-modal" class="mc" style="z-index:10002">
   <div class="mb" style="max-width:400px">
     <div class="mh"><h5>Xác nhận nộp bài</h5></div>
     <div class="mbd" style="text-align:center">
@@ -490,7 +500,7 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 'use strict';
 // ─── DB ───────────────────────────────────────────────
 const DB = {
-  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+  get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch(e) { return null; } },
   set(k, v) { localStorage.setItem(k, JSON.stringify(v)); }
 };
 
@@ -794,6 +804,9 @@ function startExam() {
   renderQNav();
   showScreen('exam');
   tryFullscreen();
+  // Hiện nút Nộp bài nổi (luôn accessible)
+  var fab = document.getElementById('submit-fab');
+  if (fab) fab.classList.add('visible');
 }
 
 function setupWatermark() {
@@ -848,6 +861,9 @@ function triggerViol(msg) {
   document.getElementById('viol-msg').textContent = msg;
   document.getElementById('viol-cnt').textContent = String(S.violations);
   document.getElementById('viol-modal').style.display = 'flex';
+  // Hiện FAB Nộp bài ngay cả khi modal vi phạm đang mở
+  var fab = document.getElementById('submit-fab');
+  if (fab) fab.classList.add('visible');
   var cfg = DB.get('config') || {};
   if (cfg.violAction === 'reset') {
     S.answers = {};
@@ -859,6 +875,8 @@ function triggerViol(msg) {
 function violContinue() {
   document.getElementById('viol-modal').style.display = 'none';
   document.getElementById('exam-ca').classList.remove('blurred');
+  var fab = document.getElementById('submit-fab');
+  if (fab) fab.classList.remove('visible');
   tryFullscreen();
 }
 
@@ -966,6 +984,10 @@ function showSubmitConfirm() {
 function submitExam() {
   clearInterval(S.timerInt);
   closeM('sub-modal');
+  // Ẩn FAB và violation modal khi nộp bài
+  var fab = document.getElementById('submit-fab');
+  if (fab) fab.classList.remove('visible');
+  document.getElementById('viol-modal').style.display = 'none';
   if (document.exitFullscreen) document.exitFullscreen().catch(function() {});
 
   var qs = S.exam.questions;
