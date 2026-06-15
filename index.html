@@ -327,6 +327,38 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
       <div class="qnav" id="qnav"></div>
     </div>
   </div>
+
+  <!-- ══ VIOLATION MODAL (inside screen-exam for fullscreen) ══ -->
+  <div id="viol-modal" style="display:none" class="viol-modal">
+    <div class="viol-box">
+      <div style="font-size:3rem;margin-bottom:16px">⚠️</div>
+      <h4 style="font-weight:800;color:var(--danger)">CẢNH BÁO VI PHẠM</h4>
+      <p id="viol-msg" style="color:var(--text-muted);margin:12px 0 24px">Bạn đã rời khỏi màn hình thi!</p>
+      <button onclick="violContinue()" style="background:var(--danger);border:none;color:white;border-radius:10px;padding:12px 24px;font-weight:700;cursor:pointer;font-size:1rem"><i class="fas fa-redo me-1"></i>Tiếp tục thi</button>
+      <p style="font-size:.75rem;color:var(--text-muted);margin-top:12px">Vi phạm lần <span id="viol-cnt">1</span></p>
+    </div>
+  </div>
+
+  <!-- ══ SUBMIT MODAL (inside screen-exam for fullscreen) ══ -->
+  <div id="sub-modal" class="mc" style="z-index:10002">
+    <div class="mb" style="max-width:400px">
+      <div class="mh"><h5>Xác nhận nộp bài</h5></div>
+      <div class="mbd" style="text-align:center">
+        <div style="font-size:3rem;margin-bottom:12px">📋</div>
+        <p>Bạn đã trả lời <strong id="ans-cnt">0</strong> / <strong id="tot-cnt">0</strong> câu hỏi.</p>
+        <p style="color:var(--text-muted);font-size:.9rem">Sau khi nộp bài, bạn không thể thay đổi đáp án.</p>
+      </div>
+      <div class="mf">
+        <button class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600" onclick="closeM('sub-modal')">Quay lại</button>
+        <button class="btn-primary-custom" style="width:auto;padding:10px 24px" onclick="submitExam()">Nộp bài</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ FAB NỘP BÀI (inside screen-exam for fullscreen) ══ -->
+  <button id="submit-fab" onclick="showSubmitConfirm()" title="Nộp bài ngay">
+    <i class="fas fa-paper-plane"></i>Nộp bài
+  </button>
 </div>
 
 <!-- ══ RESULT ══ -->
@@ -395,38 +427,6 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
       <span style="font-size:.85rem;color:var(--text-muted)"><i class="fas fa-user-circle me-1"></i>Admin</span>
     </div>
     <div class="content-area" id="apc"></div>
-  </div>
-</div>
-
-<!-- ══ VIOLATION MODAL ══ -->
-<div id="viol-modal" style="display:none" class="viol-modal">
-  <div class="viol-box">
-    <div style="font-size:3rem;margin-bottom:16px">⚠️</div>
-    <h4 style="font-weight:800;color:var(--danger)">CẢNH BÁO VI PHẠM</h4>
-    <p id="viol-msg" style="color:var(--text-muted);margin:12px 0 24px">Bạn đã rời khỏi màn hình thi!</p>
-    <button onclick="violContinue()" style="background:var(--danger);border:none;color:white;border-radius:10px;padding:12px 24px;font-weight:700;cursor:pointer;font-size:1rem"><i class="fas fa-redo me-1"></i>Tiếp tục thi</button>
-    <p style="font-size:.75rem;color:var(--text-muted);margin-top:12px">Vi phạm lần <span id="viol-cnt">1</span></p>
-  </div>
-</div>
-
-<!-- ══ FAB NỘP BÀI (luôn hiển thị khi thi, kể cả khi có violation modal) ══ -->
-<button id="submit-fab" onclick="showSubmitConfirm()" title="Nộp bài ngay">
-  <i class="fas fa-paper-plane"></i>Nộp bài
-</button>
-
-<!-- ══ SUBMIT MODAL ══ -->
-<div id="sub-modal" class="mc" style="z-index:10002">
-  <div class="mb" style="max-width:400px">
-    <div class="mh"><h5>Xác nhận nộp bài</h5></div>
-    <div class="mbd" style="text-align:center">
-      <div style="font-size:3rem;margin-bottom:12px">📋</div>
-      <p>Bạn đã trả lời <strong id="ans-cnt">0</strong> / <strong id="tot-cnt">0</strong> câu hỏi.</p>
-      <p style="color:var(--text-muted);font-size:.9rem">Sau khi nộp bài, bạn không thể thay đổi đáp án.</p>
-    </div>
-    <div class="mf">
-      <button class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600" onclick="closeM('sub-modal')">Quay lại</button>
-      <button class="btn-primary-custom" style="width:auto;padding:10px 24px" onclick="submitExam()">Nộp bài</button>
-    </div>
   </div>
 </div>
 
@@ -1067,7 +1067,19 @@ function submitExam() {
   showScreen('result');
 }
 
-function restartExam() { S.acSetup = false; showScreen('login'); }
+function restartExam() {
+  S.acSetup = false;
+  // Xóa blur còn lại từ lần thi trước
+  var ca = document.getElementById('exam-ca');
+  if (ca) ca.classList.remove('blurred');
+  // Ẩn violation modal và FAB
+  document.getElementById('viol-modal').style.display = 'none';
+  var fab = document.getElementById('submit-fab');
+  if (fab) fab.classList.remove('visible');
+  // Reset state thi
+  S.exam = null; S.qi = 0; S.answers = {}; S.violations = 0;
+  showScreen('login');
+}
 
 // ─── ADMIN PAGES ──────────────────────────────────────
 var PAGE_TITLES = {
