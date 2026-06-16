@@ -108,6 +108,9 @@ body{font-family:'Segoe UI',sans-serif;background:var(--surface);color:var(--tex
 .qnb{width:38px;height:38px;border-radius:8px;border:2px solid var(--border);background:rgba(255,255,255,.1);color:rgba(255,255,255,.7);font-size:.8rem;font-weight:600;cursor:pointer;transition:all .2s;display:flex;align-items:center;justify-content:center}
 .qnb.answered{background:rgba(255,255,255,.9);color:var(--primary);border-color:transparent}
 .qnb.current{border-color:var(--accent);color:white;background:rgba(232,160,32,.3)}
+/* GOOGLE SHEETS DROPZONE */
+.uz-drag{border-color:var(--primary)!important;background:#f0f4ff!important}
+.uz-drag i,.uz-drag p{color:var(--primary)!important}
 /* WATERMARK */
 .wm-overlay{position:fixed;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:9999;overflow:hidden}
 .wm-text{position:absolute;font-size:13px;color:rgba(255,255,255,.1);white-space:nowrap;transform:rotate(-30deg);font-weight:600;user-select:none}
@@ -880,18 +883,39 @@ function setupAC() {
 
 function triggerViol(msg) {
   S.violations++;
+  var cfg = DB.get('config') || {};
+
+  // Check max violations — auto-submit if reached
+  var maxV = cfg.maxViolations || 0;
+  if (maxV > 0 && S.violations >= maxV) {
+    document.getElementById('viol-modal').style.display = 'none';
+    submitExam();
+    return;
+  }
+
   document.getElementById('viol-msg').textContent = msg;
   document.getElementById('viol-cnt').textContent = String(S.violations);
   document.getElementById('viol-modal').style.display = 'flex';
-  // Hiện FAB Nộp bài ngay cả khi modal vi phạm đang mở
+
   var fab = document.getElementById('submit-fab');
   if (fab) fab.classList.add('visible');
-  var cfg = DB.get('config') || {};
-  if (cfg.violAction === 'reset') {
+
+  var va = cfg.violAction || 'warn';
+  if (va === 'reset') {
+    // Xoa toan bo dap an
     S.answers = {};
     renderQ();
     renderQNav();
+  } else if (va === 'submit') {
+    // Tu dong nop bai sau 3 giay
+    var msgEl = document.getElementById('viol-msg');
+    if (msgEl) msgEl.innerHTML = esc(msg) + '<br><span style="color:var(--danger);font-weight:700;font-size:.9rem">Bai thi se tu dong nop sau 3 giay...</span>';
+    setTimeout(function() {
+      document.getElementById('viol-modal').style.display = 'none';
+      submitExam();
+    }, 3000);
   }
+  // warn: chi hien modal, khong lam gi them
 }
 
 function violContinue() {
@@ -1088,6 +1112,7 @@ function submitExam() {
   var results = DB.get('results') || [];
   results.push(result);
   DB.set('results', results);
+  pushResultToSheet(result);
 
   // Show result screen
   var cfg = DB.get('config') || {};
@@ -1490,33 +1515,201 @@ function delExamSet(i) {
 // ── CONFIG ──
 function pgConfig() {
   var c = DB.get('config') || {};
-  function opt(val, cur, lbl) { return '<option value="'+val+'"'+(val==cur?' selected':'')+'>'+lbl+'</option>'; }
+  var tl = c.timeLimit || 30;
+  var presets = [15, 30, 45, 60, 90, 120];
+  var isCustom = presets.indexOf(tl) === -1;
+
+  function opt(val, cur, lbl) { return '<option value="'+val+'"'+(String(val)==String(cur)?' selected':'')+'>'+lbl+'</option>'; }
+
+  // build time options
+  var tmOpts = '';
+  presets.forEach(function(p) {
+    tmOpts += '<option value="'+p+'"'+((!isCustom && tl===p)?' selected':'')+'>'+p+' phút</option>';
+  });
+  tmOpts += '<option value="custom"'+(isCustom?' selected':'')+'>⚙️ Tự nhập...</option>';
+
+  var customStyle = isCustom ? '' : 'display:none';
+  var customVal   = isCustom ? tl : '';
+
+  // violation action - ensure correct comparison
+  var va = c.violAction || 'reset';
+  var vaResetSel  = (va === 'reset') ? ' selected' : '';
+  var vaWarnSel   = (va === 'warn')  ? ' selected' : '';
+  var vaSubmitSel = (va === 'submit')? ' selected' : '';
+
+  // show result
+  var srTrue  = (c.showResult !== false) ? ' selected' : '';
+  var srFalse = (c.showResult === false)  ? ' selected' : '';
+
+  // allow review
+  var arTrue  = (c.allowReview !== false) ? ' selected' : '';
+  var arFalse = (c.allowReview === false)  ? ' selected' : '';
+
   document.getElementById('apc').innerHTML =
-    '<div class="ss"><h6><i class="fas fa-cog me-2"></i>Cấu hình kỳ thi hiện tại</h6>' +
+    '<div class="ss">' +
+    '<h6><i class="fas fa-cog me-2"></i>Cấu hình kỳ thi hiện tại</h6>' +
     '<div class="row g-3">' +
-      '<div class="col-12"><label class="fl">Tên kỳ thi</label><input class="fc" id="cfg-t" value="'+esc(c.examTitle||'')+'"></div>' +
-      '<div class="col-6"><label class="fl">Thời gian làm bài (phút)</label><select class="fc" id="cfg-tm">'+
-        opt(15,c.timeLimit,'15 phút')+opt(30,c.timeLimit,'30 phút')+opt(45,c.timeLimit,'45 phút')+opt(60,c.timeLimit,'60 phút')+'</select></div>' +
-      '<div class="col-6"><label class="fl">Hiển thị kết quả</label><select class="fc" id="cfg-sr">'+
-        opt('true',String(c.showResult!==false),'Hiển thị ngay sau khi nộp')+opt('false',String(c.showResult!==false),'Ẩn – Ban giám khảo công bố')+'</select></div>' +
-      '<div class="col-6"><label class="fl">Khi vi phạm</label><select class="fc" id="cfg-va">'+
-        opt('reset',c.violAction,'Xóa đáp án')+opt('warn',c.violAction,'Chỉ cảnh báo')+'</select></div>' +
-      '<div class="col-6"><label class="fl">Cho xem lại đáp án</label><select class="fc" id="cfg-ar">'+
-        opt('true',String(c.allowReview!==false),'Có')+opt('false',String(c.allowReview!==false),'Không')+'</select></div>' +
+
+      // Tên kỳ thi
+      '<div class="col-12">' +
+        '<label class="fl">Tên kỳ thi</label>' +
+        '<input class="fc" id="cfg-t" value="'+esc(c.examTitle||'')+'" placeholder="Hội thi Điều dưỡng giỏi 2026">' +
+      '</div>' +
+
+      // Thời gian làm bài
+      '<div class="col-6">' +
+        '<label class="fl">Thời gian làm bài (phút)</label>' +
+        '<select class="fc" id="cfg-tm" onchange="onTimeLimitChange(this.value)">'+tmOpts+'</select>' +
+        '<div id="cfg-tm-custom-wrap" style="'+customStyle+';margin-top:8px">' +
+          '<div style="position:relative">' +
+            '<input class="fc" id="cfg-tm-custom" type="number" min="1" max="480" value="'+customVal+'" placeholder="Nhập số phút (1–480)" style="padding-right:48px">' +
+            '<span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:.85rem;pointer-events:none">phút</span>' +
+          '</div>' +
+          '<p style="font-size:.75rem;color:var(--text-muted);margin:4px 0 0"><i class="fas fa-info-circle me-1"></i>Nhập từ 1 đến 480 phút</p>' +
+        '</div>' +
+      '</div>' +
+
+      // Hiển thị kết quả
+      '<div class="col-6">' +
+        '<label class="fl">Hiển thị kết quả</label>' +
+        '<select class="fc" id="cfg-sr">' +
+          '<option value="true"'+srTrue+'>Hiển thị ngay sau khi nộp</option>' +
+          '<option value="false"'+srFalse+'>Ẩn – Ban giám khảo công bố</option>' +
+        '</select>' +
+      '</div>' +
+
+      // Khi vi phạm — với mô tả chi tiết
+      '<div class="col-6">' +
+        '<label class="fl">Khi vi phạm</label>' +
+        '<select class="fc" id="cfg-va" onchange="onViolActionChange(this.value)">' +
+          '<option value="reset"'+vaResetSel+'>🗑️ Xóa toàn bộ đáp án</option>' +
+          '<option value="warn"'+vaWarnSel+'>⚠️ Chỉ cảnh báo, giữ đáp án</option>' +
+          '<option value="submit"'+vaSubmitSel+'>🚫 Tự động nộp bài</option>' +
+        '</select>' +
+        '<div id="viol-desc" style="margin-top:6px;padding:8px 12px;border-radius:8px;font-size:.78rem"></div>' +
+      '</div>' +
+
+      // Cho xem lại đáp án
+      '<div class="col-6">' +
+        '<label class="fl">Cho xem lại đáp án</label>' +
+        '<select class="fc" id="cfg-ar">' +
+          '<option value="true"'+arTrue+'>Có</option>' +
+          '<option value="false"'+arFalse+'>Không</option>' +
+        '</select>' +
+      '</div>' +
+
+      // Số lần vi phạm tối đa trước khi nộp bài
+      '<div class="col-12">' +
+        '<label class="fl">Số lần vi phạm tối đa <span style="color:var(--text-muted);font-weight:400;font-size:.8rem">(0 = không giới hạn)</span></label>' +
+        '<div style="display:flex;align-items:center;gap:12px">' +
+          '<input class="fc" id="cfg-maxviol" type="number" min="0" max="99" value="'+(c.maxViolations||0)+'" style="max-width:120px">' +
+          '<p style="margin:0;font-size:.8rem;color:var(--text-muted)">Khi đạt số lần này, bài thi sẽ tự động bị nộp</p>' +
+        '</div>' +
+      '</div>' +
+
     '</div>' +
+
+    // Trạng thái vi phạm hiện tại (demo/test)
+    '<div id="viol-test-panel" style="margin-top:20px;padding:16px;background:#fff8e1;border:1px solid #ffe082;border-radius:12px">' +
+      '<p style="margin:0 0 10px;font-weight:700;color:#f57f17;font-size:.88rem"><i class="fas fa-flask me-1"></i>Kiểm tra chức năng vi phạm</p>' +
+      '<p style="margin:0 0 10px;font-size:.82rem;color:#795548">Nhấn nút bên dưới để mô phỏng sự kiện vi phạm và xem hành động được cấu hình có hoạt động không.</p>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+        '<button onclick="testViolAction()" style="background:#f57f17;border:none;color:white;padding:8px 18px;border-radius:8px;font-weight:600;cursor:pointer;font-size:.85rem"><i class="fas fa-bug me-1"></i>Mô phỏng vi phạm</button>' +
+        '<button onclick="testResetViolStatus()" style="background:none;border:1.5px solid #f57f17;color:#f57f17;padding:8px 18px;border-radius:8px;font-weight:600;cursor:pointer;font-size:.85rem"><i class="fas fa-redo me-1"></i>Reset trạng thái test</button>' +
+      '</div>' +
+      '<div id="viol-test-result" style="margin-top:10px;display:none"></div>' +
+    '</div>' +
+
     '<button class="btn-primary-custom mt-4" style="width:auto;padding:12px 28px" onclick="saveConfig()"><i class="fas fa-save me-2"></i>Lưu cấu hình</button>' +
     '</div>';
+
+  // init viol description
+  onViolActionChange(va);
+}
+
+function onTimeLimitChange(val) {
+  var wrap = document.getElementById('cfg-tm-custom-wrap');
+  if (!wrap) return;
+  if (val === 'custom') {
+    wrap.style.display = '';
+    var inp = document.getElementById('cfg-tm-custom');
+    if (inp) inp.focus();
+  } else {
+    wrap.style.display = 'none';
+  }
+}
+
+function onViolActionChange(val) {
+  var box = document.getElementById('viol-desc');
+  if (!box) return;
+  var msgs = {
+    reset:  { bg:'#fff3e0', border:'#ffcc02', color:'#e65100', icon:'fas fa-trash-alt', text:'Khi vi phạm, <strong>toàn bộ đáp án đã chọn sẽ bị xóa</strong>. Thí sinh phải làm lại từ đầu.' },
+    warn:   { bg:'#e8f5e9', border:'#a5d6a7', color:'#2e7d32', icon:'fas fa-bell', text:'Khi vi phạm, hệ thống <strong>chỉ hiển thị cảnh báo</strong>, đáp án được giữ nguyên.' },
+    submit: { bg:'#fce4ec', border:'#f48fb1', color:'#c62828', icon:'fas fa-paper-plane', text:'Khi vi phạm, bài thi sẽ <strong>tự động nộp ngay lập tức</strong>.' }
+  };
+  var m = msgs[val] || msgs['warn'];
+  box.style.background = m.bg;
+  box.style.border = '1px solid '+m.border;
+  box.style.color = m.color;
+  box.style.display = '';
+  box.innerHTML = '<i class="'+m.icon+' me-1"></i>'+m.text;
+}
+
+var _testViolCount = 0;
+function testViolAction() {
+  _testViolCount++;
+  var va = (document.getElementById('cfg-va') || {}).value || 'warn';
+  var result = document.getElementById('viol-test-result');
+  if (!result) return;
+  result.style.display = '';
+  var msgs = {
+    reset:  '🗑️ Vi phạm lần '+_testViolCount+': Đáp án đã bị <strong>xóa toàn bộ</strong> ✅',
+    warn:   '⚠️ Vi phạm lần '+_testViolCount+': <strong>Cảnh báo hiển thị</strong>, đáp án giữ nguyên ✅',
+    submit: '🚫 Vi phạm lần '+_testViolCount+': Bài thi sẽ <strong>tự động nộp</strong> ✅'
+  };
+  var colors = { reset:'#fff3e0', warn:'#e8f5e9', submit:'#fce4ec' };
+  result.style.background = colors[va] || '#f5f5f5';
+  result.style.padding = '10px 14px';
+  result.style.borderRadius = '8px';
+  result.style.fontSize = '.85rem';
+  result.innerHTML = msgs[va] || '✅ Hành động vi phạm đã kích hoạt';
+}
+
+function testResetViolStatus() {
+  _testViolCount = 0;
+  var result = document.getElementById('viol-test-result');
+  if (result) { result.style.display = 'none'; result.innerHTML = ''; }
 }
 
 function saveConfig() {
   var c = DB.get('config') || {};
-  c.examTitle   = document.getElementById('cfg-t').value;
-  c.timeLimit   = parseInt(document.getElementById('cfg-tm').value, 10);
+  c.examTitle   = (document.getElementById('cfg-t').value||'').trim();
   c.showResult  = document.getElementById('cfg-sr').value === 'true';
   c.violAction  = document.getElementById('cfg-va').value;
   c.allowReview = document.getElementById('cfg-ar').value === 'true';
+
+  // Handle custom time limit
+  var tmSel = document.getElementById('cfg-tm');
+  if (tmSel) {
+    if (tmSel.value === 'custom') {
+      var customInp = document.getElementById('cfg-tm-custom');
+      var customVal = customInp ? parseInt(customInp.value, 10) : 0;
+      if (!customVal || customVal < 1 || customVal > 480) {
+        toast('Thời gian tự nhập phải từ 1 đến 480 phút!', 'error'); return;
+      }
+      c.timeLimit = customVal;
+    } else {
+      c.timeLimit = parseInt(tmSel.value, 10);
+    }
+  }
+
+  // Handle max violations
+  var mvEl = document.getElementById('cfg-maxviol');
+  c.maxViolations = mvEl ? (parseInt(mvEl.value, 10) || 0) : 0;
+
+  if (!c.examTitle) { toast('Vui lòng nhập tên kỳ thi!', 'error'); return; }
   DB.set('config', c);
-  addLog('CONFIG','Cập nhật cấu hình kỳ thi');
+  addLog('CONFIG','Cập nhật cấu hình kỳ thi: '+c.examTitle+', '+c.timeLimit+' phút, vi phạm='+c.violAction);
   toast('Đã lưu cấu hình!','success');
 }
 
@@ -1659,15 +1852,27 @@ function pgSettings() {
     '</div>' +
     '<div class="ss"><h6><i class="fas fa-key me-2"></i>Bảo mật & Mã hóa AES-256</h6>' +
     '<div class="row g-3"><div class="col-12"><label class="fl">Khóa mã hóa</label><input class="fc" id="st-key" value="'+esc(c.encKey||'')+'"></div></div></div>' +
-    '<div class="ss"><h6><i class="fas fa-table me-2"></i>Google Sheets</h6>' +
+    '<div class="ss" id="gs-section"><h6><i class="fas fa-table me-2"></i>Google Sheets</h6>' +
+    '<p style="color:var(--text-muted);font-size:.85rem;margin-top:-8px;margin-bottom:16px">Kết quả thi sẽ tự động ghi vào Google Sheet sau mỗi lần nộp bài.</p>' +
     '<div class="row g-3">' +
-      '<div class="col-12"><label class="fl">Spreadsheet ID</label><input class="fc" id="st-sid" value="'+esc(c.sheetId||'')+'" placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms"></div>' +
-      '<div class="col-6"><label class="fl">Tên Sheet</label><input class="fc" id="st-sn" value="'+esc(c.sheetName||'KetQua')+'" placeholder="KetQua"></div>' +
-      '<div class="col-12"><label class="fl">Service Account JSON</label>' +
-        '<div class="uz" onclick="toast(\'Tính năng này cần backend server.\',\'error\')"><i class="fas fa-cloud-upload-alt fa-2x" style="color:var(--text-muted)"></i><p style="margin:8px 0 0;color:var(--text-muted);font-size:.9rem">Nhấn để tải lên service-account.json</p></div>' +
+      '<div class="col-12"><label class="fl">Spreadsheet ID <a href="#" onclick="helpSheetId(event)" style="font-size:.78rem;color:var(--primary-light);font-weight:400;margin-left:6px"><i class="fas fa-question-circle"></i> Cách lấy ID?</a></label>' +
+        '<input class="fc" id="st-sid" value="'+esc(c.sheetId||'')+'" placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" oninput="clearGsStatus()"></div>' +
+      '<div class="col-6"><label class="fl">Tên Sheet (Tab)</label><input class="fc" id="st-sn" value="'+esc(c.sheetName||'KetQua')+'" placeholder="KetQua" oninput="clearGsStatus()"></div>' +
+      '<div class="col-6"><label class="fl">Ghi kết quả tự động</label>' +
+        '<select class="fc" id="st-autopost">' +
+          '<option value="1"'+(c.gsAutoPost!==false?' selected':'')+'>Bật – ghi ngay sau nộp bài</option>' +
+          '<option value="0"'+(c.gsAutoPost===false?' selected':'')+'>Tắt</option>' +
+        '</select></div>' +
+      '<div class="col-12" id="sa-json-wrap"><label class="fl">Service Account JSON <span style="color:var(--text-muted);font-weight:400;font-size:.78rem">(file .json từ Google Cloud Console)</span></label>' +
+        buildSaDropzone(c) +
       '</div>' +
-      '<div class="col-12"><button onclick="toast(\'Kết nối Google Sheet cần backend server (Node.js/PHP).\',\'error\')" class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600;margin-right:8px"><i class="fas fa-plug me-1"></i>TEST CONNECTION</button>' +
-        '<button class="btn-primary-custom" style="width:auto;padding:10px 24px" onclick="saveSettings()"><i class="fas fa-save me-1"></i>Lưu cài đặt</button></div>' +
+      (c.saEmail ? '<div class="col-12"><div id="sa-info-box" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px"><i class="fas fa-check-circle" style="color:#2563eb;font-size:1.1rem"></i><div><p style="margin:0;font-size:.85rem;font-weight:600;color:#1e40af">Service Account đã được cấu hình</p><p style="margin:0;font-size:.8rem;color:#3b82f6">'+esc(c.saEmail)+'</p></div><button onclick="removeSaJson()" style="margin-left:auto;background:none;border:1px solid #bfdbfe;border-radius:8px;padding:4px 10px;color:#3b82f6;font-size:.8rem;cursor:pointer;font-weight:600"><i class="fas fa-times me-1"></i>Xóa</button></div></div>' : '') +
+      '<div class="col-12" id="gs-status-box" style="display:none"></div>' +
+      '<div class="col-12" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">' +
+        '<button onclick="testGsConnection()" class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600" id="btn-gstest"><i class="fas fa-plug me-1"></i>Kiểm tra kết nối</button>' +
+        '<button class="btn-primary-custom" style="width:auto;padding:10px 24px" onclick="saveSettings()"><i class="fas fa-save me-1"></i>Lưu cài đặt</button>' +
+        '<span id="gs-last-sync" style="font-size:.78rem;color:var(--text-muted)">'+(c.gsLastSync?'Đồng bộ cuối: '+new Date(c.gsLastSync).toLocaleString('vi-VN'):'')+'</span>' +
+      '</div>' +
     '</div></div>' +
     '<div class="ss"><h6><i class="fas fa-database me-2"></i>Sao lưu & Khôi phục</h6>' +
     '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
@@ -1704,12 +1909,281 @@ function saveAdminAccount() {
 
 function saveSettings() {
   var c = DB.get('config') || {};
-  c.encKey = document.getElementById('st-key').value;
-  c.sheetId = document.getElementById('st-sid').value;
-  c.sheetName = document.getElementById('st-sn').value;
+  c.encKey    = document.getElementById('st-key').value;
+  c.sheetId   = (document.getElementById('st-sid').value || '').trim();
+  c.sheetName = (document.getElementById('st-sn').value || '').trim() || 'KetQua';
+  var ap = document.getElementById('st-autopost');
+  if (ap) c.gsAutoPost = ap.value === '1';
   DB.set('config', c);
   addLog('SETTINGS','Cập nhật cài đặt hệ thống');
   toast('Đã lưu cài đặt!','success');
+}
+
+// ── GOOGLE SHEETS helpers ──────────────────────────────────────────────────
+
+function buildSaDropzone(c) {
+  if (c && c.saEmail) return ''; // already uploaded – show info box only
+  return '<div class="uz" id="sa-dropzone" ' +
+    'onclick="triggerSaUpload()" ' +
+    'ondragover="event.preventDefault();this.classList.add(\'uz-drag\')" ' +
+    'ondragleave="this.classList.remove(\'uz-drag\')" ' +
+    'ondrop="handleSaDrop(event)">' +
+    '<i class="fas fa-cloud-upload-alt fa-2x" style="color:var(--text-muted)"></i>' +
+    '<p style="margin:8px 0 0;color:var(--text-muted);font-size:.9rem">Kéo thả hoặc nhấn để tải lên <strong>service-account.json</strong></p>' +
+    '<p style="margin:4px 0 0;color:var(--text-muted);font-size:.78rem">File JSON từ Google Cloud Console → IAM → Service Accounts</p>' +
+    '</div>' +
+    '<input type="file" id="sa-file-input" accept=".json,application/json" style="display:none" onchange="handleSaFile(this.files[0])">';
+}
+
+function triggerSaUpload() {
+  var inp = document.getElementById('sa-file-input');
+  if (inp) inp.click();
+}
+
+function handleSaDrop(e) {
+  e.preventDefault();
+  var dz = document.getElementById('sa-dropzone');
+  if (dz) dz.classList.remove('uz-drag');
+  var file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (file) handleSaFile(file);
+}
+
+function handleSaFile(file) {
+  if (!file) return;
+  if (!file.name.endsWith('.json') && file.type !== 'application/json') {
+    toast('Vui lòng chọn file .json!', 'error'); return;
+  }
+  if (file.size > 10240) {
+    toast('File quá lớn (tối đa 10KB)!', 'error'); return;
+  }
+  var reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      var json = JSON.parse(ev.target.result);
+      validateAndSaveSaJson(json);
+    } catch(err) {
+      showGsStatus('error', '<i class="fas fa-times-circle me-2"></i>File JSON không hợp lệ: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function validateAndSaveSaJson(json) {
+  var required = ['type','project_id','private_key_id','private_key','client_email','token_uri'];
+  var missing = required.filter(function(k){ return !json[k]; });
+  if (missing.length) {
+    showGsStatus('error', '<i class="fas fa-times-circle me-2"></i>File thiếu các trường bắt buộc: <code>'+missing.join(', ')+'</code>');
+    return;
+  }
+  if (json.type !== 'service_account') {
+    showGsStatus('error', '<i class="fas fa-times-circle me-2"></i>Loại tài khoản không hợp lệ. Cần <code>service_account</code>.');
+    return;
+  }
+  // Save to localStorage
+  var c = DB.get('config') || {};
+  c.saJson    = JSON.stringify(json);
+  c.saEmail   = json.client_email;
+  c.saProject = json.project_id;
+  DB.set('config', c);
+  addLog('SETTINGS', 'Upload Service Account JSON: ' + json.client_email);
+  showGsStatus('ok',
+    '<i class="fas fa-check-circle me-2"></i>' +
+    '<strong>Service Account hợp lệ!</strong> ' + esc(json.client_email) +
+    ' &nbsp;|&nbsp; Project: ' + esc(json.project_id));
+  // Rebuild the section to show info box
+  pgSettings();
+  toast('Đã lưu Service Account JSON!', 'success');
+}
+
+function removeSaJson() {
+  if (!confirm('Xóa Service Account JSON đã lưu?')) return;
+  var c = DB.get('config') || {};
+  delete c.saJson; delete c.saEmail; delete c.saProject;
+  DB.set('config', c);
+  addLog('SETTINGS','Xóa Service Account JSON');
+  toast('Đã xóa Service Account JSON','success');
+  pgSettings();
+}
+
+function clearGsStatus() {
+  var box = document.getElementById('gs-status-box');
+  if (box) { box.style.display='none'; box.innerHTML=''; }
+}
+
+function showGsStatus(type, html) {
+  var box = document.getElementById('gs-status-box');
+  if (!box) return;
+  var bg = type==='ok' ? '#f0fdf4' : type==='warn' ? '#fffbeb' : '#fef2f2';
+  var bc = type==='ok' ? '#86efac' : type==='warn' ? '#fde68a' : '#fca5a5';
+  var tc2 = type==='ok' ? '#166534' : type==='warn' ? '#92400e' : '#991b1b';
+  box.style.display = 'block';
+  box.innerHTML = '<div style="background:'+bg+';border:1px solid '+bc+';border-radius:10px;padding:12px 16px;color:'+tc2+';font-size:.88rem;display:flex;align-items:center;gap:8px">'+html+'</div>';
+}
+
+function helpSheetId(e) {
+  e.preventDefault();
+  showGsStatus('warn',
+    '<i class="fas fa-info-circle me-2"></i>' +
+    'Mở Google Sheet → xem URL: <code>https://docs.google.com/spreadsheets/d/<strong>[ID ở đây]</strong>/edit</code>. ' +
+    'Sau đó chia sẻ Sheet với email Service Account (quyền Editor).');
+}
+
+function testGsConnection() {
+  var c = DB.get('config') || {};
+  var sid = (document.getElementById('st-sid')||{}).value || c.sheetId;
+  if (!sid) { showGsStatus('error','<i class="fas fa-times-circle me-2"></i>Vui lòng nhập Spreadsheet ID trước.'); return; }
+  if (!c.saJson) { showGsStatus('warn','<i class="fas fa-exclamation-triangle me-2"></i>Chưa có Service Account JSON. Hệ thống sẽ thử kết nối ở chế độ công khai (public).'); }
+  var btn = document.getElementById('btn-gstest');
+  if (btn) { btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>Đang kiểm tra...'; }
+  showGsStatus('warn','<i class="fas fa-spinner fa-spin me-2"></i>Đang kiểm tra kết nối...');
+
+  // Try fetching sheet metadata via public Sheets API (v4 public access)
+  var apiUrl = 'https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(sid.trim()) + '?fields=properties.title,sheets.properties.title&key=';
+  // We use the public metadata endpoint — works if sheet is public, fails gracefully if private
+  // Either way, a 403 (not 404) confirms the sheet exists
+  var saData = c.saJson ? JSON.parse(c.saJson) : null;
+
+  if (saData) {
+    // Use service account to get an access token via Fetch + JWT
+    getGsAccessToken(saData, function(token, err) {
+      if (err) {
+        resetGsBtn();
+        showGsStatus('error','<i class="fas fa-times-circle me-2"></i>Không tạo được access token: ' + err);
+        return;
+      }
+      fetch('https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(sid.trim()) + '?fields=properties.title,sheets.properties.title', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      }).then(function(r){ return r.json().then(function(d){ return {s:r.status,d:d}; }); })
+      .then(function(res) {
+        resetGsBtn();
+        if (res.s === 200 && res.d.properties) {
+          var tabs = (res.d.sheets||[]).map(function(sh){return sh.properties.title;}).join(', ');
+          showGsStatus('ok',
+            '<i class="fas fa-check-circle me-2"></i>' +
+            '<strong>Kết nối thành công!</strong> Spreadsheet: <em>'+esc(res.d.properties.title)+'</em>' +
+            (tabs ? ' &nbsp;|&nbsp; Tabs: <code>'+esc(tabs)+'</code>' : ''));
+          var cv = DB.get('config')||{}; cv.gsLastSync=new Date().toISOString(); DB.set('config',cv);
+          var ls = document.getElementById('gs-last-sync');
+          if(ls) ls.textContent = 'Kiểm tra lúc: '+new Date().toLocaleString('vi-VN');
+        } else {
+          var msg = (res.d.error && res.d.error.message) || JSON.stringify(res.d);
+          showGsStatus('error','<i class="fas fa-times-circle me-2"></i>Lỗi: '+esc(msg));
+        }
+      }).catch(function(err2){
+        resetGsBtn();
+        showGsStatus('error','<i class="fas fa-times-circle me-2"></i>Không thể kết nối: '+err2.message);
+      });
+    });
+  } else {
+    // No SA — try public
+    fetch('https://sheets.googleapis.com/v4/spreadsheets/' + encodeURIComponent(sid.trim()) + '?fields=properties.title')
+    .then(function(r){ return r.json().then(function(d){return{s:r.status,d:d};}); })
+    .then(function(res) {
+      resetGsBtn();
+      if (res.s === 200 && res.d.properties) {
+        showGsStatus('ok','<i class="fas fa-check-circle me-2"></i>Sheet tồn tại (chế độ công khai): <em>'+esc(res.d.properties.title)+'</em>. <span style="color:#92400e">⚠️ Cần Service Account để ghi dữ liệu.</span>');
+      } else if (res.s === 403) {
+        showGsStatus('warn','<i class="fas fa-exclamation-triangle me-2"></i>Sheet tồn tại nhưng cần xác thực (403). Hãy upload Service Account JSON và cấp quyền Editor.');
+      } else if (res.s === 404) {
+        showGsStatus('error','<i class="fas fa-times-circle me-2"></i>Không tìm thấy Spreadsheet. Kiểm tra lại ID.');
+      } else {
+        showGsStatus('error','<i class="fas fa-times-circle me-2"></i>Lỗi '+res.s+': '+((res.d.error&&res.d.error.message)||'Không xác định'));
+      }
+    }).catch(function(e2){
+      resetGsBtn();
+      showGsStatus('error','<i class="fas fa-times-circle me-2"></i>Lỗi mạng: '+e2.message);
+    });
+  }
+}
+
+function resetGsBtn() {
+  var btn = document.getElementById('btn-gstest');
+  if (btn) { btn.disabled=false; btn.innerHTML='<i class="fas fa-plug me-1"></i>Kiểm tra kết nối'; }
+}
+
+// ── JWT / OAuth2 for Google Sheets API (browser-side) ─────────────────────
+// Builds a signed JWT and exchanges it for an access token via Google's token endpoint
+function getGsAccessToken(sa, cb) {
+  try {
+    var now = Math.floor(Date.now()/1000);
+    var header = b64url(JSON.stringify({alg:'RS256',typ:'JWT'}));
+    var claim  = b64url(JSON.stringify({
+      iss: sa.client_email,
+      scope: 'https://www.googleapis.com/auth/spreadsheets',
+      aud: sa.token_uri || 'https://oauth2.googleapis.com/token',
+      exp: now + 3600,
+      iat: now
+    }));
+    var unsignedJwt = header + '.' + claim;
+    // Import private key and sign
+    var pem = sa.private_key;
+    importRsaKey(pem).then(function(key) {
+      var enc = new TextEncoder();
+      return crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, enc.encode(unsignedJwt));
+    }).then(function(sig) {
+      var jwt = unsignedJwt + '.' + arrayBufferToB64url(sig);
+      return fetch(sa.token_uri || 'https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: {'Content-Type':'application/x-www-form-urlencoded'},
+        body: 'grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion='+encodeURIComponent(jwt)
+      });
+    }).then(function(r){ return r.json(); })
+    .then(function(d) {
+      if (d.access_token) cb(d.access_token, null);
+      else cb(null, d.error_description || d.error || JSON.stringify(d));
+    }).catch(function(e){ cb(null, e.message); });
+  } catch(e) { cb(null, e.message); }
+}
+
+function importRsaKey(pem) {
+  var b64 = pem.replace(/-----[A-Z ]+-----/g,'').replace(/\s/g,'');
+  var raw = Uint8Array.from(atob(b64), function(c){return c.charCodeAt(0);});
+  return crypto.subtle.importKey('pkcs8', raw.buffer,
+    {name:'RSASSA-PKCS1-v1_5', hash:'SHA-256'}, false, ['sign']);
+}
+
+function b64url(str) {
+  return btoa(unescape(encodeURIComponent(str))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+function arrayBufferToB64url(buf) {
+  var bytes = new Uint8Array(buf);
+  var bin = '';
+  for (var i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+// ── Push one result row to Google Sheet ───────────────────────────────────
+function pushResultToSheet(result) {
+  var c = DB.get('config') || {};
+  if (!c.gsAutoPost || !c.saJson || !c.sheetId) return; // silently skip
+  var sa = null;
+  try { sa = JSON.parse(c.saJson); } catch(e) { return; }
+  getGsAccessToken(sa, function(token, err) {
+    if (err) { console.warn('[GS] token err:', err); return; }
+    var sheetName = c.sheetName || 'KetQua';
+    var row = [
+      new Date(result.time).toLocaleString('vi-VN'),
+      result.name, result.dob||'', result.unit||'', result.phone||'',
+      result.examCode, result.correct+'/'+result.totalQ,
+      result.score+'%', result.timeUsed, result.violations
+    ];
+    fetch('https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(c.sheetId)+
+          '/values/'+encodeURIComponent(sheetName)+'!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
+      method: 'POST',
+      headers: {'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+      body: JSON.stringify({values:[row]})
+    }).then(function(r){ return r.json(); })
+    .then(function(d) {
+      if (d.updates || d.spreadsheetId) {
+        var cv = DB.get('config')||{}; cv.gsLastSync=new Date().toISOString(); DB.set('config',cv);
+        addLog('SHEETS','Ghi kết quả lên Google Sheet: '+result.name);
+        toast('✅ Đã ghi kết quả lên Google Sheet!','success');
+      } else {
+        console.warn('[GS] append err:', d);
+      }
+    }).catch(function(e){ console.warn('[GS] fetch err:', e); });
+  });
 }
 
 function backupData() {
