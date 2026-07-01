@@ -70,6 +70,11 @@ body{font-family:'Segoe UI',sans-serif;background:var(--surface);color:var(--tex
 .tc tbody td{padding:13px 16px;border-bottom:1px solid #f1f5f9;font-size:.9rem;vertical-align:middle}
 .tc tbody tr:last-child td{border-bottom:none}
 .tc tbody tr:hover{background:#f8fafc}
+/* QUESTION BANK MULTI-SELECT */
+.qs-chk{width:17px;height:17px;cursor:pointer;accent-color:var(--primary)}
+tr.qs-row-selected{background:#eef2ff}
+tr.qs-row-selected:hover{background:#e0e7ff}
+#qs-bulk-bar{animation:fab-pop .2s ease}
 /* BADGES */
 .bl{padding:4px 10px;border-radius:6px;font-size:.75rem;font-weight:600}
 .be{background:#d1fae5;color:#065f46}
@@ -542,6 +547,7 @@ let S = {
   acSetup: false,
   editQIdx: -1,
   srCnt: 0,
+  selectedQ: {},
 };
 
 // ─── INIT DATA ────────────────────────────────────────
@@ -1253,6 +1259,7 @@ function pgDash() {
 // ── QUESTIONS ──
 function pgQs() {
   var qs = DB.get('questions') || [];
+  S.selectedQ = {};
   document.getElementById('apc').innerHTML =
     '<div class="dt">' +
       '<div class="dt-header">' +
@@ -1268,6 +1275,13 @@ function pgQs() {
           '<button onclick="openQModal(-1)" class="btn-acc btn-sm" style="border-radius:8px;padding:6px 14px"><i class="fas fa-plus me-1"></i>Thêm câu hỏi</button>' +
         '</div>' +
       '</div>' +
+      '<div id="qs-bulk-bar" style="display:none;align-items:center;justify-content:space-between;gap:12px;padding:12px 24px;background:#eff6ff;border-bottom:1px solid var(--border);flex-wrap:wrap">' +
+        '<div style="font-weight:600;color:var(--primary);font-size:.9rem"><i class="fas fa-check-square me-2"></i>Đã chọn <span id="qs-sel-count">0</span> câu hỏi</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+          '<button onclick="clearQsSelection()" class="btn btn-sm btn-outline-secondary" style="border-radius:8px;font-weight:600"><i class="fas fa-times me-1"></i>Bỏ chọn</button>' +
+          '<button onclick="delSelectedQs()" class="btn btn-sm btn-dc" style="border-radius:8px"><i class="fas fa-trash me-1"></i>Xóa đã chọn (<span id="qs-sel-count2">0</span>)</button>' +
+        '</div>' +
+      '</div>' +
       '<div class="table-responsive" id="qs-table">' + buildQTable(qs) + '</div>' +
     '</div>';
 
@@ -1277,18 +1291,23 @@ function pgQs() {
 
 function buildQTable(qs) {
   if (!qs.length) return '<div style="padding:40px;text-align:center;color:var(--text-muted)"><i class="fas fa-inbox fa-2x" style="display:block;margin-bottom:12px"></i>Chưa có câu hỏi nào</div>';
-  var html = '<table class="table tc"><thead><tr><th>Mã</th><th>Nội dung</th><th>Chủ đề</th><th>Mức độ</th><th>Điểm</th><th>Thao tác</th></tr></thead><tbody>';
+  var allSel = qs.length > 0 && qs.every(function(q){ return !!S.selectedQ[q.id]; });
+  var html = '<table class="table tc"><thead><tr>' +
+    '<th style="width:40px"><input type="checkbox" class="qs-chk" id="qs-select-all" '+(allSel?'checked':'')+' onchange="toggleSelectAllQ(this)"></th>' +
+    '<th>Mã</th><th>Nội dung</th><th>Chủ đề</th><th>Mức độ</th><th>Điểm</th><th>Thao tác</th></tr></thead><tbody>';
   qs.forEach(function(q, i) {
     var lvlCls = q.level === 'easy' ? 'be' : q.level === 'medium' ? 'bm' : 'bh';
     var lvlTxt = q.level === 'easy' ? 'Dễ' : q.level === 'medium' ? 'TB' : 'Khó';
-    html += '<tr>';
+    var checked = S.selectedQ[q.id] ? 'checked' : '';
+    html += '<tr class="'+(checked?'qs-row-selected':'')+'">';
+    html += '<td><input type="checkbox" class="qs-chk qs-row-chk" data-id="'+esc(q.id)+'" '+checked+' onchange="toggleSelectQ(this)"></td>';
     html += '<td><code style="background:#f1f5f9;padding:2px 8px;border-radius:6px;font-size:.8rem">'+esc(q.id)+'</code></td>';
     html += '<td style="max-width:280px"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(q.content)+'</div></td>';
     html += '<td><span style="background:#eff6ff;color:#1e40af;padding:3px 10px;border-radius:20px;font-size:.75rem;font-weight:600">'+esc(q.topic)+'</span></td>';
     html += '<td><span class="bl '+lvlCls+'">'+lvlTxt+'</span></td>';
     html += '<td><strong>'+q.score+'</strong></td>';
-    html += '<td><button class="btn btn-sm" style="border-radius:6px;border:1px solid var(--border);color:var(--primary);margin-right:4px" data-qi="'+i+'" onclick="openQModal(parseInt(this.getAttribute(\'data-qi\'),10))"><i class="fas fa-edit"></i></button>';
-    html += '<button class="btn btn-sm btn-dc" style="border-radius:6px" data-qi="'+i+'" onclick="delQ(parseInt(this.getAttribute(\'data-qi\'),10))"><i class="fas fa-trash"></i></button></td>';
+    html += '<td><button class="btn btn-sm" style="border-radius:6px;border:1px solid var(--border);color:var(--primary);margin-right:4px" data-id="'+esc(q.id)+'" onclick="openQModalById(this.getAttribute(\'data-id\'))"><i class="fas fa-edit"></i></button>';
+    html += '<button class="btn btn-sm btn-dc" style="border-radius:6px" data-id="'+esc(q.id)+'" onclick="delQById(this.getAttribute(\'data-id\'))"><i class="fas fa-trash"></i></button></td>';
     html += '</tr>';
   });
   html += '</tbody></table>';
@@ -1299,9 +1318,18 @@ function filterQs() {
   var s = (document.getElementById('qs-search').value || '').toLowerCase();
   var t = document.getElementById('qs-topic').value || '';
   var qs = DB.get('questions') || [];
+  updateQsHeaderCount();
   if (s) qs = qs.filter(function(q) { return q.content.toLowerCase().includes(s) || q.id.toLowerCase().includes(s); });
   if (t) qs = qs.filter(function(q) { return q.topic === t; });
   document.getElementById('qs-table').innerHTML = buildQTable(qs);
+  updateQsBulkBar();
+}
+
+function openQModalById(id) {
+  var qs = DB.get('questions') || [];
+  var idx = qs.findIndex(function(q){ return q.id === id; });
+  if (idx < 0) return;
+  openQModal(idx);
 }
 
 function openQModal(idx) {
@@ -1351,14 +1379,85 @@ function saveQuestion() {
   toast((S.editQIdx>=0?'Cập nhật':'Thêm') + ' câu hỏi thành công!', 'success');
 }
 
-function delQ(idx) {
+function delQById(id) {
   if (!confirm('Xóa câu hỏi này?')) return;
   var qs = DB.get('questions') || [];
+  var idx = qs.findIndex(function(q){ return q.id === id; });
+  if (idx < 0) return;
   qs.splice(idx, 1);
   DB.set('questions', qs);
-  addLog('QUESTION','Xóa câu hỏi');
-  pgQs();
+  delete S.selectedQ[id];
+  addLog('QUESTION','Xóa câu hỏi '+id);
+  filterQs();
   toast('Đã xóa câu hỏi','success');
+}
+
+// ── QUESTIONS: SELECT MULTIPLE ──
+function toggleSelectQ(cb) {
+  var id = cb.getAttribute('data-id');
+  if (cb.checked) S.selectedQ[id] = true; else delete S.selectedQ[id];
+  var tr = cb.closest('tr');
+  if (tr) tr.classList.toggle('qs-row-selected', cb.checked);
+  syncSelectAllQCheckbox();
+  updateQsBulkBar();
+}
+
+function toggleSelectAllQ(cb) {
+  var boxes = document.querySelectorAll('#qs-table .qs-row-chk');
+  boxes.forEach(function(box) {
+    box.checked = cb.checked;
+    var id = box.getAttribute('data-id');
+    if (cb.checked) S.selectedQ[id] = true; else delete S.selectedQ[id];
+    var tr = box.closest('tr');
+    if (tr) tr.classList.toggle('qs-row-selected', cb.checked);
+  });
+  updateQsBulkBar();
+}
+
+function syncSelectAllQCheckbox() {
+  var all = document.getElementById('qs-select-all');
+  if (!all) return;
+  var boxes = document.querySelectorAll('#qs-table .qs-row-chk');
+  var checkedCount = document.querySelectorAll('#qs-table .qs-row-chk:checked').length;
+  all.checked = boxes.length > 0 && checkedCount === boxes.length;
+  all.indeterminate = checkedCount > 0 && checkedCount < boxes.length;
+}
+
+function updateQsBulkBar() {
+  var count = Object.keys(S.selectedQ).length;
+  var bar = document.getElementById('qs-bulk-bar');
+  if (!bar) return;
+  bar.style.display = count > 0 ? 'flex' : 'none';
+  var c1 = document.getElementById('qs-sel-count'); if (c1) c1.textContent = count;
+  var c2 = document.getElementById('qs-sel-count2'); if (c2) c2.textContent = count;
+}
+
+function clearQsSelection() {
+  S.selectedQ = {};
+  document.querySelectorAll('#qs-table .qs-row-chk:checked').forEach(function(box){ box.checked = false; box.closest('tr') && box.closest('tr').classList.remove('qs-row-selected'); });
+  syncSelectAllQCheckbox();
+  updateQsBulkBar();
+}
+
+function delSelectedQs() {
+  var ids = Object.keys(S.selectedQ);
+  if (!ids.length) return;
+  if (!confirm('Xóa '+ids.length+' câu hỏi đã chọn? Không thể hoàn tác!')) return;
+  var idSet = {}; ids.forEach(function(id){ idSet[id]=true; });
+  var qs = DB.get('questions') || [];
+  qs = qs.filter(function(q){ return !idSet[q.id]; });
+  DB.set('questions', qs);
+  addLog('QUESTION','Xóa hàng loạt '+ids.length+' câu hỏi');
+  S.selectedQ = {};
+  filterQs();
+  updateQsHeaderCount();
+  toast('Đã xóa '+ids.length+' câu hỏi','success');
+}
+
+function updateQsHeaderCount() {
+  var qs = DB.get('questions') || [];
+  var badge = document.querySelector('#apc .dt-header h5 span');
+  if (badge) badge.textContent = qs.length;
 }
 
 function downloadTemplate() {
