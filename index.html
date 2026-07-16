@@ -1284,12 +1284,12 @@ function pgDash() {
 
 // ── TOPICS (Danh mục chủ đề) ──
 function getTopics() {
+  // CHỈ đọc dữ liệu đã lưu — KHÔNG tự động khởi tạo lại danh sách mặc định ở đây.
+  // Việc khởi tạo lần đầu đã được xử lý duy nhất trong initData().
+  // Nếu tự "vá" mảng rỗng ở đây thì khi admin xóa hết chủ đề, hệ thống sẽ hồi sinh
+  // lại danh mục mặc định ngay lần gọi tiếp theo — đây chính là lỗi cần khắc phục.
   var t = DB.get('topics');
-  if (!t || !Array.isArray(t) || !t.length) {
-    t = ['Kiến thức chung','Tin học','Chuyển đổi số','BHYT','Điều dưỡng'];
-    DB.set('topics', t);
-  }
-  return t;
+  return Array.isArray(t) ? t : [];
 }
 
 function setTopics(arr) { DB.set('topics', arr); }
@@ -1341,6 +1341,7 @@ function countQByTopic(topic) {
 
 function pgTopics() {
   var topics = getTopics();
+  S.selectedTopics = {};
   document.getElementById('apc').innerHTML =
     '<div class="dt">' +
       '<div class="dt-header">' +
@@ -1350,8 +1351,16 @@ function pgTopics() {
         '</div>' +
       '</div>' +
       '<p style="padding:0 24px;color:var(--text-muted);font-size:.85rem;margin-top:-4px">' +
-        'Chủ đề dùng chung cho Ngân hàng câu hỏi và khi Sinh đề tự động. Import Excel sẽ tự động bổ sung chủ đề mới nếu chưa có trong danh mục.' +
+        'Chủ đề dùng chung cho Ngân hàng câu hỏi và khi Sinh đề tự động. Import Excel sẽ tự động bổ sung chủ đề mới nếu chưa có trong danh mục. ' +
+        'Chỉ có thể xóa hẳn một chủ đề khi không còn câu hỏi nào thuộc chủ đề đó.' +
       '</p>' +
+      '<div id="tp-bulk-bar" style="display:none;align-items:center;justify-content:space-between;gap:12px;padding:12px 24px;background:#eff6ff;border-bottom:1px solid var(--border);flex-wrap:wrap">' +
+        '<div style="font-weight:600;color:var(--primary);font-size:.9rem"><i class="fas fa-check-square me-2"></i>Đã chọn <span id="tp-sel-count">0</span> chủ đề</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+          '<button onclick="clearTopicsSelection()" class="btn btn-sm btn-outline-secondary" style="border-radius:8px;font-weight:600"><i class="fas fa-times me-1"></i>Bỏ chọn</button>' +
+          '<button onclick="delSelectedTopics()" class="btn btn-sm btn-dc" style="border-radius:8px"><i class="fas fa-trash me-1"></i>Xóa đã chọn (<span id="tp-sel-count2">0</span>)</button>' +
+        '</div>' +
+      '</div>' +
       '<div class="table-responsive" id="topics-table">' + buildTopicTable(topics) + '</div>' +
     '</div>';
 }
@@ -1359,11 +1368,16 @@ function pgTopics() {
 function buildTopicTable(topics) {
   if (!topics.length) return '<div style="padding:40px;text-align:center;color:var(--text-muted)"><i class="fas fa-tags fa-2x" style="display:block;margin-bottom:12px"></i>Chưa có chủ đề nào</div>';
   var meta = getTopicMeta();
-  var html = '<table class="table tc"><thead><tr><th>Chủ đề</th><th>Mô tả</th><th>Số câu hỏi</th><th>Thao tác</th></tr></thead><tbody>';
+  var allSel = topics.length > 0 && topics.every(function(t){ return !!S.selectedTopics[t]; });
+  var html = '<table class="table tc"><thead><tr>' +
+    '<th style="width:40px"><input type="checkbox" class="qs-chk" id="tp-select-all" '+(allSel?'checked':'')+' onchange="toggleSelectAllTopic(this)"></th>' +
+    '<th>Chủ đề</th><th>Mô tả</th><th>Số câu hỏi</th><th>Thao tác</th></tr></thead><tbody>';
   topics.forEach(function(t, i) {
     var cnt = countQByTopic(t);
     var desc = (meta[t] && meta[t].desc) ? meta[t].desc : '';
-    html += '<tr>';
+    var checked = S.selectedTopics[t] ? 'checked' : '';
+    html += '<tr class="'+(checked?'qs-row-selected':'')+'">';
+    html += '<td><input type="checkbox" class="qs-chk tp-row-chk" data-t="'+esc(t)+'" '+checked+' onchange="toggleSelectTopic(this)"></td>';
     html += '<td><span style="background:#eff6ff;color:#1e40af;padding:3px 10px;border-radius:20px;font-size:.8rem;font-weight:600">'+esc(t)+'</span></td>';
     html += '<td style="color:var(--text-muted);font-size:.85rem">'+(desc?esc(desc):'—')+'</td>';
     html += '<td><strong>'+cnt+'</strong> câu</td>';
@@ -1376,6 +1390,50 @@ function buildTopicTable(topics) {
   });
   html += '</tbody></table>';
   return html;
+}
+
+// ── TOPICS: SELECT MULTIPLE / BULK DELETE ──
+function toggleSelectTopic(cb) {
+  var t = cb.getAttribute('data-t');
+  if (cb.checked) S.selectedTopics[t] = true; else delete S.selectedTopics[t];
+  var tr = cb.closest('tr');
+  if (tr) tr.classList.toggle('qs-row-selected', cb.checked);
+  syncSelectAllTopicCheckbox();
+  updateTopicsBulkBar();
+}
+
+function toggleSelectAllTopic(cb) {
+  var boxes = document.querySelectorAll('#topics-table .tp-row-chk');
+  boxes.forEach(function(box) {
+    box.checked = cb.checked;
+    var t = box.getAttribute('data-t');
+    if (cb.checked) S.selectedTopics[t] = true; else delete S.selectedTopics[t];
+    var tr = box.closest('tr');
+    if (tr) tr.classList.toggle('qs-row-selected', cb.checked);
+  });
+  updateTopicsBulkBar();
+}
+
+function syncSelectAllTopicCheckbox() {
+  var all = document.getElementById('tp-select-all');
+  if (!all) return;
+  var boxes = document.querySelectorAll('#topics-table .tp-row-chk');
+  var boxesArr = Array.from(boxes);
+  all.checked = boxesArr.length > 0 && boxesArr.every(function(b){ return b.checked; });
+}
+
+function updateTopicsBulkBar() {
+  var n = Object.keys(S.selectedTopics).length;
+  var bar = document.getElementById('tp-bulk-bar');
+  if (!bar) return;
+  bar.style.display = n > 0 ? 'flex' : 'none';
+  var c1 = document.getElementById('tp-sel-count'); if (c1) c1.textContent = n;
+  var c2 = document.getElementById('tp-sel-count2'); if (c2) c2.textContent = n;
+}
+
+function clearTopicsSelection() {
+  S.selectedTopics = {};
+  pgTopics();
 }
 
 function openTopicModal(idx) {
@@ -1435,26 +1493,59 @@ function saveTopic() {
   pgTopics();
 }
 
+// Xóa TRIỆT ĐỂ một chủ đề: chỉ cho phép xóa khi không còn câu hỏi nào thuộc chủ đề đó.
+// Không tự động chuyển câu hỏi sang chủ đề khác — admin phải chủ động xử lý câu hỏi trước.
 function delTopic(name) {
-  var topics = getTopics();
   var cnt = countQByTopic(name);
-  var msg = cnt > 0
-    ? 'Chủ đề "'+name+'" đang được dùng bởi '+cnt+' câu hỏi. Xóa sẽ chuyển các câu hỏi này sang "Chưa phân loại". Tiếp tục?'
-    : 'Xóa chủ đề "'+name+'"?';
-  if (!confirm(msg)) return;
   if (cnt > 0) {
-    ensureTopic('Chưa phân loại');
-    var qs = DB.get('questions') || [];
-    qs.forEach(function(q){ if (q.topic === name) q.topic = 'Chưa phân loại'; });
-    DB.set('questions', qs);
+    alert('Không thể xóa chủ đề "'+name+'" vì đang có '+cnt+' câu hỏi thuộc chủ đề này.\nVui lòng xóa hoặc chuyển các câu hỏi đó sang chủ đề khác trước khi xóa.');
+    return;
   }
+  if (!confirm('Xóa hẳn chủ đề "'+name+'"? Hành động này không thể hoàn tác.')) return;
+  var topics = getTopics();
   var idx = topics.indexOf(name);
   if (idx >= 0) topics.splice(idx, 1);
   setTopics(topics);
   var meta = getTopicMeta(); delete meta[name]; setTopicMeta(meta);
+  delete S.selectedTopics[name];
   addLog('TOPIC','Xóa chủ đề "'+name+'"');
   pgTopics();
   toast('Đã xóa chủ đề','success');
+}
+
+// Xóa hàng loạt các chủ đề đã chọn. Chỉ những chủ đề KHÔNG còn câu hỏi mới bị xóa;
+// những chủ đề còn câu hỏi sẽ được giữ lại và báo cho admin biết để xử lý trước.
+function delSelectedTopics() {
+  var selected = Object.keys(S.selectedTopics);
+  if (!selected.length) return;
+  var deletable = selected.filter(function(t){ return countQByTopic(t) === 0; });
+  var blocked   = selected.filter(function(t){ return countQByTopic(t) > 0; });
+
+  if (!deletable.length) {
+    alert('Không thể xóa: tất cả '+selected.length+' chủ đề đã chọn đều đang có câu hỏi.\nVui lòng xóa hoặc chuyển câu hỏi sang chủ đề khác trước.');
+    return;
+  }
+  var confirmMsg = 'Xóa hẳn '+deletable.length+' chủ đề đã chọn (không còn câu hỏi)?';
+  if (blocked.length) {
+    confirmMsg += '\n\nLưu ý: '+blocked.length+' chủ đề sau sẽ KHÔNG bị xóa vì vẫn còn câu hỏi:\n- ' + blocked.join('\n- ');
+  }
+  if (!confirm(confirmMsg)) return;
+
+  var topics = getTopics();
+  var meta = getTopicMeta();
+  deletable.forEach(function(t) {
+    var idx = topics.indexOf(t);
+    if (idx >= 0) topics.splice(idx, 1);
+    delete meta[t];
+    delete S.selectedTopics[t];
+  });
+  setTopics(topics);
+  setTopicMeta(meta);
+  addLog('TOPIC','Xóa hàng loạt '+deletable.length+' chủ đề: '+deletable.join(', '));
+  pgTopics();
+  var msg = 'Đã xóa '+deletable.length+' chủ đề.';
+  if (blocked.length) msg += ' Giữ lại '+blocked.length+' chủ đề vì còn câu hỏi.';
+  toast(msg, 'success');
 }
 
 // Mở nhanh modal Thêm câu hỏi với chủ đề được chọn sẵn, từ trang Danh mục chủ đề
