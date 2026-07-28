@@ -624,7 +624,7 @@ function initData() {
       examTitle: 'Hội thi Điều dưỡng giỏi 2026',
       timeLimit: 30, showResult: true, allowReview: true,
       violAction: 'reset', encKey: 'exam-key-2026',
-      sheetId: '', sheetName: 'KetQua',
+      sheetId: '', sheetName: 'KetQua', detailSheetName: 'ChiTiet',
       adminUser: 'admin', adminPass: 'admin'
     });
   }
@@ -2534,23 +2534,25 @@ function pgSettings() {
     '<div class="ss"><h6><i class="fas fa-key me-2"></i>Bảo mật & Mã hóa AES-256</h6>' +
     '<div class="row g-3"><div class="col-12"><label class="fl">Khóa mã hóa</label><input class="fc" id="st-key" value="'+esc(c.encKey||'')+'"></div></div></div>' +
     '<div class="ss" id="gs-section"><h6><i class="fas fa-table me-2"></i>Google Sheets</h6>' +
-    '<p style="color:var(--text-muted);font-size:.85rem;margin-top:-8px;margin-bottom:16px">Kết quả thi sẽ tự động ghi vào Google Sheet sau mỗi lần nộp bài.</p>' +
+    '<p style="color:var(--text-muted);font-size:.85rem;margin-top:-8px;margin-bottom:16px">Sau mỗi lần nộp bài, hệ thống tự ghi <strong>1 dòng tổng hợp</strong> vào tab kết quả và <strong>nhiều dòng chi tiết</strong> (mỗi câu hỏi một dòng) vào tab chi tiết. Các tab và tiêu đề cột sẽ được tạo tự động nếu chưa có.</p>' +
     '<div class="row g-3">' +
       '<div class="col-12"><label class="fl">Spreadsheet ID <a href="#" onclick="helpSheetId(event)" style="font-size:.78rem;color:var(--primary-light);font-weight:400;margin-left:6px"><i class="fas fa-question-circle"></i> Cách lấy ID?</a></label>' +
         '<input class="fc" id="st-sid" value="'+esc(c.sheetId||'')+'" placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" oninput="clearGsStatus()"></div>' +
-      '<div class="col-6"><label class="fl">Tên Sheet (Tab)</label><input class="fc" id="st-sn" value="'+esc(c.sheetName||'KetQua')+'" placeholder="KetQua" oninput="clearGsStatus()"></div>' +
-      '<div class="col-6"><label class="fl">Ghi kết quả tự động</label>' +
+      '<div class="col-4"><label class="fl">Tab tổng hợp</label><input class="fc" id="st-sn" value="'+esc(c.sheetName||'KetQua')+'" placeholder="KetQua" oninput="clearGsStatus()"></div>' +
+      '<div class="col-4"><label class="fl">Tab chi tiết</label><input class="fc" id="st-dsn" value="'+esc(c.detailSheetName||'ChiTiet')+'" placeholder="ChiTiet" oninput="clearGsStatus()"></div>' +
+      '<div class="col-4"><label class="fl">Ghi tự động</label>' +
         '<select class="fc" id="st-autopost">' +
-          '<option value="1"'+(c.gsAutoPost!==false?' selected':'')+'>Bật – ghi ngay sau nộp bài</option>' +
+          '<option value="1"'+(c.gsAutoPost!==false?' selected':'')+'>Bật – sau nộp bài</option>' +
           '<option value="0"'+(c.gsAutoPost===false?' selected':'')+'>Tắt</option>' +
         '</select></div>' +
       '<div class="col-12" id="sa-json-wrap"><label class="fl">Service Account JSON <span style="color:var(--text-muted);font-weight:400;font-size:.78rem">(file .json từ Google Cloud Console)</span></label>' +
         buildSaDropzone(c) +
       '</div>' +
-      (c.saEmail ? '<div class="col-12"><div id="sa-info-box" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px"><i class="fas fa-check-circle" style="color:#2563eb;font-size:1.1rem"></i><div><p style="margin:0;font-size:.85rem;font-weight:600;color:#1e40af">Service Account đã được cấu hình</p><p style="margin:0;font-size:.8rem;color:#3b82f6">'+esc(c.saEmail)+'</p></div><button onclick="removeSaJson()" style="margin-left:auto;background:none;border:1px solid #bfdbfe;border-radius:8px;padding:4px 10px;color:#3b82f6;font-size:.8rem;cursor:pointer;font-weight:600"><i class="fas fa-times me-1"></i>Xóa</button></div></div>' : '') +
+      (c.saEmail ? '<div class="col-12"><div id="sa-info-box" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px"><i class="fas fa-check-circle" style="color:#2563eb;font-size:1.1rem"></i><div><p style="margin:0;font-size:.85rem;font-weight:600;color:#1e40af">Service Account đã được cấu hình</p><p style="margin:0;font-size:.8rem;color:#3b82f6">'+esc(c.saEmail)+'</p><p style="margin:4px 0 0;font-size:.75rem;color:#3b82f6">⚠️ Nhớ chia sẻ Google Sheet cho email này với quyền <strong>Editor</strong>.</p></div><button onclick="removeSaJson()" style="margin-left:auto;background:none;border:1px solid #bfdbfe;border-radius:8px;padding:4px 10px;color:#3b82f6;font-size:.8rem;cursor:pointer;font-weight:600"><i class="fas fa-times me-1"></i>Xóa</button></div></div>' : '') +
       '<div class="col-12" id="gs-status-box" style="display:none"></div>' +
       '<div class="col-12" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">' +
         '<button onclick="testGsConnection()" class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600" id="btn-gstest"><i class="fas fa-plug me-1"></i>Kiểm tra kết nối</button>' +
+        '<button onclick="syncAllResultsToSheet()" class="btn btn-acc" style="border-radius:10px;padding:9px 18px" id="btn-gssync"><i class="fas fa-cloud-upload-alt me-1"></i>Đồng bộ tất cả kết quả</button>' +
         '<button class="btn-primary-custom" style="width:auto;padding:10px 24px" onclick="saveSettings()"><i class="fas fa-save me-1"></i>Lưu cài đặt</button>' +
         '<span id="gs-last-sync" style="font-size:.78rem;color:var(--text-muted)">'+(c.gsLastSync?'Đồng bộ cuối: '+new Date(c.gsLastSync).toLocaleString('vi-VN'):'')+'</span>' +
       '</div>' +
@@ -2593,6 +2595,8 @@ function saveSettings() {
   c.encKey    = document.getElementById('st-key').value;
   c.sheetId   = (document.getElementById('st-sid').value || '').trim();
   c.sheetName = (document.getElementById('st-sn').value || '').trim() || 'KetQua';
+  var dsn = document.getElementById('st-dsn');
+  if (dsn) c.detailSheetName = (dsn.value || '').trim() || 'ChiTiet';
   var ap = document.getElementById('st-autopost');
   if (ap) c.gsAutoPost = ap.value === '1';
   DB.set('config', c);
@@ -2739,10 +2743,18 @@ function testGsConnection() {
         resetGsBtn();
         if (res.s === 200 && res.d.properties) {
           var tabs = (res.d.sheets||[]).map(function(sh){return sh.properties.title;}).join(', ');
+          var cfgNow = DB.get('config')||{};
+          var sumTab = (document.getElementById('st-sn')||{}).value || cfgNow.sheetName || 'KetQua';
+          var detTab = (document.getElementById('st-dsn')||{}).value || cfgNow.detailSheetName || 'ChiTiet';
+          var tabList = (res.d.sheets||[]).map(function(sh){return sh.properties.title;});
+          var missing = [sumTab, detTab].filter(function(t){ return tabList.indexOf(t) === -1; });
+          var note = missing.length
+            ? ' <span style="color:#92400e">Tab <code>'+esc(missing.join('</code>, <code>'))+'</code> sẽ được tạo tự động khi ghi.</span>'
+            : ' <span style="color:#166534">Đã có sẵn tab tổng hợp & chi tiết.</span>';
           showGsStatus('ok',
             '<i class="fas fa-check-circle me-2"></i>' +
             '<strong>Kết nối thành công!</strong> Spreadsheet: <em>'+esc(res.d.properties.title)+'</em>' +
-            (tabs ? ' &nbsp;|&nbsp; Tabs: <code>'+esc(tabs)+'</code>' : ''));
+            (tabs ? ' &nbsp;|&nbsp; Tabs: <code>'+esc(tabs)+'</code>' : '') + note);
           var cv = DB.get('config')||{}; cv.gsLastSync=new Date().toISOString(); DB.set('config',cv);
           var ls = document.getElementById('gs-last-sync');
           if(ls) ls.textContent = 'Kiểm tra lúc: '+new Date().toLocaleString('vi-VN');
@@ -2834,36 +2846,189 @@ function arrayBufferToB64url(buf) {
   return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
 }
 
-// ── Push one result row to Google Sheet ───────────────────────────────────
+// ── GOOGLE SHEETS: cấu trúc cột ────────────────────────────────────────────
+var GS_SUMMARY_HEADER = ['Thời gian nộp','Họ tên','Ngày sinh','Đơn vị','SĐT','Mã đề','Đúng/Tổng','Điểm','Thời gian làm','Vi phạm'];
+var GS_DETAIL_HEADER  = ['Thời gian nộp','Họ tên','Đơn vị','SĐT','Mã đề','Câu số','Nội dung câu hỏi','Đáp án chọn','Nội dung đáp án chọn','Đáp án đúng','Nội dung đáp án đúng','Kết quả','Điểm câu'];
+
+// Tạo mảng dòng tổng hợp (1 dòng) từ 1 kết quả
+function gsSummaryRow(result) {
+  return [
+    new Date(result.time).toLocaleString('vi-VN'),
+    result.name, result.dob||'', result.unit||'', result.phone||'',
+    result.examCode, result.correct+'/'+result.totalQ,
+    result.score+'%', result.timeUsed, result.violations||0
+  ];
+}
+
+// Tạo mảng dòng chi tiết (nhiều dòng) từ 1 kết quả
+function gsDetailRows(result) {
+  var rows = [];
+  var when = new Date(result.time).toLocaleString('vi-VN');
+  (result.details || []).forEach(function(d, i) {
+    var optMap = {};
+    (d.options||[]).forEach(function(o){ optMap[o.letter] = o.text; });
+    var userText = d.userAns ? (optMap[d.userAns] || '') : '';
+    var corText  = d.correct ? (optMap[d.correct] || '') : '';
+    var status = !d.answered ? 'Bỏ trống' : (d.isOk ? 'Đúng' : 'Sai');
+    rows.push([
+      when, result.name, result.unit||'', result.phone||'', result.examCode,
+      i+1, d.content,
+      d.userAns || '', userText,
+      d.correct || '', corText,
+      status, d.score != null ? d.score : ''
+    ]);
+  });
+  return rows;
+}
+
+// Lấy metadata (danh sách tab hiện có) của spreadsheet
+function gsFetchTabs(sheetId, token) {
+  return fetch('https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(sheetId)+'?fields=sheets.properties.title', {
+    headers: { 'Authorization': 'Bearer ' + token }
+  }).then(function(r){
+    return r.json().then(function(d){
+      if (r.status !== 200) throw new Error((d.error && d.error.message) || ('HTTP '+r.status));
+      return (d.sheets||[]).map(function(sh){ return sh.properties.title; });
+    });
+  });
+}
+
+// Đảm bảo các tab cần thiết tồn tại (tạo nếu thiếu). Trả về promise -> mảng tab mới được tạo
+function gsEnsureTabs(sheetId, token, neededTabs, existingTabs) {
+  var toCreate = neededTabs.filter(function(t){ return existingTabs.indexOf(t) === -1; });
+  if (!toCreate.length) return Promise.resolve([]);
+  var requests = toCreate.map(function(t){ return { addSheet: { properties: { title: t } } }; });
+  return fetch('https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(sheetId)+':batchUpdate', {
+    method: 'POST',
+    headers: {'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+    body: JSON.stringify({ requests: requests })
+  }).then(function(r){
+    return r.json().then(function(d){
+      if (r.status !== 200) throw new Error((d.error && d.error.message) || ('HTTP '+r.status));
+      return toCreate;
+    });
+  });
+}
+
+// Ghi header vào 1 tab nếu tab đó vừa được tạo (hoặc đang trống)
+function gsWriteHeaderIfNew(sheetId, token, tabName, header, isNew) {
+  if (!isNew) return Promise.resolve();
+  return fetch('https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(sheetId)+
+        '/values/'+encodeURIComponent(tabName)+'!A1?valueInputOption=USER_ENTERED', {
+    method: 'PUT',
+    headers: {'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+    body: JSON.stringify({ values: [header] })
+  }).then(function(r){ return r.json(); });
+}
+
+// Append nhiều dòng vào 1 tab
+function gsAppendRows(sheetId, token, tabName, rows) {
+  if (!rows || !rows.length) return Promise.resolve({skipped:true});
+  return fetch('https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(sheetId)+
+        '/values/'+encodeURIComponent(tabName)+'!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
+    method: 'POST',
+    headers: {'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+    body: JSON.stringify({ values: rows })
+  }).then(function(r){
+    return r.json().then(function(d){
+      if (r.status !== 200) throw new Error((d.error && d.error.message) || ('HTTP '+r.status));
+      return d;
+    });
+  });
+}
+
+// ── Đẩy 1 (hoặc nhiều) kết quả lên Google Sheet: tab tổng hợp + tab chi tiết ─
+// results: mảng kết quả. opts: {silent:bool, onDone:fn(ok,msg)}
+function pushResultsToSheet(results, opts) {
+  opts = opts || {};
+  var c = DB.get('config') || {};
+  var done = opts.onDone || function(){};
+  if (!c.saJson || !c.sheetId) { done(false, 'Chưa cấu hình Google Sheet'); return; }
+  if (!results || !results.length) { done(false, 'Không có dữ liệu'); return; }
+
+  var sa = null;
+  try { sa = JSON.parse(c.saJson); } catch(e) { done(false, 'Service Account JSON không hợp lệ'); return; }
+
+  var summaryTab = c.sheetName || 'KetQua';
+  var detailTab  = c.detailSheetName || 'ChiTiet';
+
+  getGsAccessToken(sa, function(token, err) {
+    if (err) {
+      if (!opts.silent) toast('❌ Google Sheet: '+err,'error');
+      console.warn('[GS] token err:', err);
+      done(false, err);
+      return;
+    }
+
+    // Gom dữ liệu
+    var summaryRows = results.map(gsSummaryRow);
+    var detailRows = [];
+    results.forEach(function(r){ detailRows = detailRows.concat(gsDetailRows(r)); });
+
+    gsFetchTabs(c.sheetId, token).then(function(existing){
+      var needed = [summaryTab];
+      if (detailRows.length) needed.push(detailTab);
+      return gsEnsureTabs(c.sheetId, token, needed, existing).then(function(created){
+        // Viết header cho các tab mới tạo
+        var chain = Promise.resolve();
+        chain = chain.then(function(){ return gsWriteHeaderIfNew(c.sheetId, token, summaryTab, GS_SUMMARY_HEADER, created.indexOf(summaryTab)>-1); });
+        if (detailRows.length) chain = chain.then(function(){ return gsWriteHeaderIfNew(c.sheetId, token, detailTab, GS_DETAIL_HEADER, created.indexOf(detailTab)>-1); });
+        return chain;
+      });
+    }).then(function(){
+      // Append dữ liệu tổng hợp rồi chi tiết
+      return gsAppendRows(c.sheetId, token, summaryTab, summaryRows).then(function(){
+        return gsAppendRows(c.sheetId, token, detailTab, detailRows);
+      });
+    }).then(function(){
+      var cv = DB.get('config')||{}; cv.gsLastSync=new Date().toISOString(); DB.set('config',cv);
+      addLog('SHEETS','Đồng bộ '+results.length+' kết quả lên Google Sheet ('+detailRows.length+' dòng chi tiết)');
+      if (!opts.silent) toast('✅ Đã ghi '+results.length+' kết quả + chi tiết lên Google Sheet!','success');
+      done(true, 'OK');
+    }).catch(function(e){
+      var msg = e && e.message ? e.message : String(e);
+      if (!opts.silent) toast('❌ Ghi Google Sheet thất bại: '+msg,'error');
+      console.warn('[GS] push err:', msg);
+      done(false, msg);
+    });
+  });
+}
+
+// Tự động đẩy 1 kết quả ngay sau khi nộp bài (giữ tên hàm cũ để không phá vỡ nơi gọi)
 function pushResultToSheet(result) {
   var c = DB.get('config') || {};
-  if (!c.gsAutoPost || !c.saJson || !c.sheetId) return; // silently skip
-  var sa = null;
-  try { sa = JSON.parse(c.saJson); } catch(e) { return; }
-  getGsAccessToken(sa, function(token, err) {
-    if (err) { console.warn('[GS] token err:', err); return; }
-    var sheetName = c.sheetName || 'KetQua';
-    var row = [
-      new Date(result.time).toLocaleString('vi-VN'),
-      result.name, result.dob||'', result.unit||'', result.phone||'',
-      result.examCode, result.correct+'/'+result.totalQ,
-      result.score+'%', result.timeUsed, result.violations
-    ];
-    fetch('https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(c.sheetId)+
-          '/values/'+encodeURIComponent(sheetName)+'!A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS', {
-      method: 'POST',
-      headers: {'Authorization':'Bearer '+token,'Content-Type':'application/json'},
-      body: JSON.stringify({values:[row]})
-    }).then(function(r){ return r.json(); })
-    .then(function(d) {
-      if (d.updates || d.spreadsheetId) {
-        var cv = DB.get('config')||{}; cv.gsLastSync=new Date().toISOString(); DB.set('config',cv);
-        addLog('SHEETS','Ghi kết quả lên Google Sheet: '+result.name);
-        toast('✅ Đã ghi kết quả lên Google Sheet!','success');
+  if (!c.gsAutoPost || !c.saJson || !c.sheetId) return; // im lặng bỏ qua nếu chưa bật/chưa cấu hình
+  pushResultsToSheet([result], { silent: false });
+}
+
+// ── Đồng bộ TẤT CẢ kết quả đang lưu lên Google Sheet (nút trong Cài đặt) ────
+function syncAllResultsToSheet() {
+  var c = DB.get('config') || {};
+  if (!c.saJson || !c.sheetId) { showGsStatus('error','<i class="fas fa-times-circle me-2"></i>Vui lòng cấu hình Spreadsheet ID và Service Account trước.'); return; }
+  var results = DB.get('results') || [];
+  if (!results.length) { showGsStatus('warn','<i class="fas fa-info-circle me-2"></i>Chưa có kết quả nào để đồng bộ.'); return; }
+  if (!confirm('Đồng bộ toàn bộ '+results.length+' kết quả (kèm chi tiết từng câu) lên Google Sheet?\n\nLưu ý: thao tác này ghi thêm (append) — có thể tạo dòng trùng nếu bạn đã đồng bộ trước đó.')) return;
+
+  var btn = document.getElementById('btn-gssync');
+  if (btn) { btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>Đang đồng bộ...'; }
+  showGsStatus('warn','<i class="fas fa-spinner fa-spin me-2"></i>Đang đồng bộ '+results.length+' kết quả lên Google Sheet...');
+
+  // Ưu tiên đẩy theo thứ tự thời gian (cũ -> mới)
+  var ordered = results.slice().sort(function(a,b){ return new Date(a.time)-new Date(b.time); });
+  pushResultsToSheet(ordered, {
+    silent: true,
+    onDone: function(ok, msg) {
+      if (btn) { btn.disabled=false; btn.innerHTML='<i class="fas fa-cloud-upload-alt me-1"></i>Đồng bộ tất cả kết quả'; }
+      if (ok) {
+        var detailCnt = ordered.reduce(function(s,r){ return s + ((r.details&&r.details.length)||0); }, 0);
+        showGsStatus('ok','<i class="fas fa-check-circle me-2"></i><strong>Đồng bộ thành công!</strong> Đã ghi '+ordered.length+' kết quả và '+detailCnt+' dòng chi tiết lên Google Sheet.');
+        var ls = document.getElementById('gs-last-sync');
+        if (ls) ls.textContent = 'Đồng bộ cuối: '+new Date().toLocaleString('vi-VN');
+        toast('✅ Đã đồng bộ '+ordered.length+' kết quả!','success');
       } else {
-        console.warn('[GS] append err:', d);
+        showGsStatus('error','<i class="fas fa-times-circle me-2"></i>Đồng bộ thất bại: '+esc(msg));
       }
-    }).catch(function(e){ console.warn('[GS] fetch err:', e); });
+    }
   });
 }
 
