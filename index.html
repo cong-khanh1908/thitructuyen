@@ -474,12 +474,12 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
           <select class="fc" id="qm-topic"></select>
         </div>
         <div class="col-12"><label class="fl">Nội dung câu hỏi</label><textarea class="fc" id="qm-cnt" rows="3" placeholder="Nhập nội dung câu hỏi..."></textarea></div>
-        <div class="col-12"><label class="fl">Đáp án A</label><input class="fc" id="qm-a" placeholder="Đáp án A"></div>
-        <div class="col-12"><label class="fl">Đáp án B</label><input class="fc" id="qm-b" placeholder="Đáp án B"></div>
-        <div class="col-12"><label class="fl">Đáp án C</label><input class="fc" id="qm-c" placeholder="Đáp án C"></div>
-        <div class="col-12"><label class="fl">Đáp án D</label><input class="fc" id="qm-d" placeholder="Đáp án D"></div>
+        <div class="col-12"><label class="fl">Đáp án A</label><input class="fc" id="qm-a" placeholder="Đáp án A" oninput="refreshCorrectOpts()"></div>
+        <div class="col-12"><label class="fl">Đáp án B</label><input class="fc" id="qm-b" placeholder="Đáp án B" oninput="refreshCorrectOpts()"></div>
+        <div class="col-12"><label class="fl">Đáp án C <span style="color:var(--gray);font-weight:400">(tùy chọn)</span></label><input class="fc" id="qm-c" placeholder="Bỏ trống nếu câu hỏi không có đáp án C" oninput="refreshCorrectOpts()"></div>
+        <div class="col-12"><label class="fl">Đáp án D <span style="color:var(--gray);font-weight:400">(tùy chọn)</span></label><input class="fc" id="qm-d" placeholder="Bỏ trống nếu câu hỏi không có đáp án D" oninput="refreshCorrectOpts()"></div>
         <div class="col-6"><label class="fl">Đáp án đúng</label>
-          <select class="fc" id="qm-cor"><option>A</option><option>B</option><option>C</option><option>D</option></select>
+          <select class="fc" id="qm-cor"><option>A</option><option>B</option></select>
         </div>
         <div class="col-6"><label class="fl">Mức độ</label>
           <select class="fc" id="qm-lvl"><option value="easy">Dễ</option><option value="medium">Trung bình</option><option value="hard">Khó</option></select>
@@ -820,20 +820,31 @@ function startExam() {
   var pool = qs.slice().sort(function() { return Math.random() - 0.5; });
   var take = Math.min(40, pool.length);
   var examQs = pool.slice(0, take).map(function(q) {
-    // Shuffle answer order
-    var opts = ['a','b','c','d'].sort(function() { return Math.random() - 0.5; });
-    var letters = ['A','B','C','D'];
-    var mapped = {};
-    var newCor = 'A';
-    opts.forEach(function(orig, idx) {
-      mapped[letters[idx]] = q[orig];
-      if (orig.toUpperCase() === q.correct) newCor = letters[idx];
+    // Chỉ lấy các đáp án thực sự có nội dung (bỏ đáp án trống)
+    var srcKeys = ['a','b','c','d'].filter(function(k) {
+      return q[k] != null && String(q[k]).trim() !== '';
     });
-    return {
+    // Xáo trộn thứ tự đáp án
+    var opts = srcKeys.slice().sort(function() { return Math.random() - 0.5; });
+    var letters = ['A','B','C','D','E','F'];
+    var mapped = {};
+    var newCor = null;
+    opts.forEach(function(orig, idx) {
+      var lt = letters[idx];
+      mapped[lt] = q[orig];
+      if (orig.toUpperCase() === String(q.correct || '').toUpperCase()) newCor = lt;
+    });
+    // Nếu vì lý do nào đó chưa xác định được đáp án đúng, mặc định là lựa chọn đầu
+    if (!newCor) newCor = letters[0];
+    // Danh sách nhãn đáp án hiện có của câu này
+    var optLetters = opts.map(function(_, idx) { return letters[idx]; });
+    var out = {
       id: q.id, content: q.content, topic: q.topic,
       level: q.level, score: q.score, correct: newCor,
-      A: mapped['A'], B: mapped['B'], C: mapped['C'], D: mapped['D']
+      optLetters: optLetters
     };
+    optLetters.forEach(function(lt) { out[lt] = mapped[lt]; });
+    return out;
   });
 
   var rnd = Math.floor(Math.random() * 999) + 1;
@@ -989,7 +1000,10 @@ function renderQ() {
   document.getElementById('epg').style.width  = ((ans / total) * 100) + '%';
 
   var html = '';
-  ['A','B','C','D'].forEach(function(lt) {
+  var letters = q.optLetters || ['A','B','C','D'].filter(function(lt){
+    return q[lt] != null && String(q[lt]).trim() !== '';
+  });
+  letters.forEach(function(lt) {
     var sel = S.answers[S.qi] === lt ? ' selected' : '';
     html += '<div class="aopt' + sel + '" data-lt="' + lt + '">';
     html += '<div class="ol">' + lt + '</div>';
@@ -1172,7 +1186,10 @@ function submitExam() {
         var bdr = isOk ? 'var(--success)' : 'var(--danger)';
         revHtml += '<div style="margin-bottom:16px;padding:16px;border-radius:12px;border:1px solid ' + bdr + ';background:' + bg + '">';
         revHtml += '<p style="font-weight:600;margin-bottom:8px;font-size:.9rem">' + (i+1) + '. ' + esc(q.content) + '</p>';
-        ['A','B','C','D'].forEach(function(lt) {
+        var revLetters = q.optLetters || ['A','B','C','D'].filter(function(lt){
+          return q[lt] != null && String(q[lt]).trim() !== '';
+        });
+        revLetters.forEach(function(lt) {
           var optBg = '';
           var mark = '';
           if (lt === q.correct) { optBg = 'background:#d1fae5;font-weight:600;'; mark = ' ✓'; }
@@ -1644,6 +1661,7 @@ function openQModal(idx) {
     document.getElementById('qm-b').value     = q.b;
     document.getElementById('qm-c').value     = q.c;
     document.getElementById('qm-d').value     = q.d;
+    refreshCorrectOpts();
     document.getElementById('qm-cor').value   = q.correct;
     document.getElementById('qm-topic').value = q.topic;
     document.getElementById('qm-lvl').value   = q.level;
@@ -1652,8 +1670,30 @@ function openQModal(idx) {
     document.getElementById('qm-topic').innerHTML = topicOptionsHtml('', false);
     ['qm-id','qm-cnt','qm-a','qm-b','qm-c','qm-d'].forEach(function(id) { document.getElementById(id).value = ''; });
     document.getElementById('qm-score').value = '2.5';
+    refreshCorrectOpts();
   }
   document.getElementById('q-modal').classList.add('show');
+}
+
+// Chỉ cho chọn "Đáp án đúng" trong số các đáp án đã có nội dung.
+// Tự động ẩn A/B/C/D nếu ô tương ứng đang bỏ trống.
+function refreshCorrectOpts() {
+  var sel = document.getElementById('qm-cor');
+  var prev = sel.value;
+  var map = { A:'qm-a', B:'qm-b', C:'qm-c', D:'qm-d' };
+  var available = [];
+  ['A','B','C','D'].forEach(function(lt) {
+    var v = (document.getElementById(map[lt]).value || '').trim();
+    if (v !== '') available.push(lt);
+  });
+  // Luôn đảm bảo tối thiểu có A, B để chọn
+  if (available.indexOf('A') < 0) available.unshift('A');
+  if (available.indexOf('B') < 0) available.splice(1, 0, 'B');
+  sel.innerHTML = available.map(function(lt) {
+    return '<option value="' + lt + '"' + (lt === prev ? ' selected' : '') + '>' + lt + '</option>';
+  }).join('');
+  // Nếu đáp án đúng cũ không còn khả dụng, chọn về đáp án đầu tiên
+  if (available.indexOf(prev) < 0) sel.value = available[0];
 }
 
 function saveQuestion() {
@@ -1671,7 +1711,13 @@ function saveQuestion() {
     level:   document.getElementById('qm-lvl').value,
     score:   parseFloat(document.getElementById('qm-score').value) || 2.5
   };
-  if (!q.content || !q.a || !q.b) { toast('Vui lòng điền đầy đủ!', 'error'); return; }
+  if (!q.content || !q.a || !q.b) { toast('Vui lòng nhập nội dung và ít nhất 2 đáp án (A, B)!', 'error'); return; }
+  // Đảm bảo đáp án đúng trỏ tới một lựa chọn có nội dung
+  var valMap = { A:q.a, B:q.b, C:q.c, D:q.d };
+  if (!valMap[q.correct] || String(valMap[q.correct]).trim() === '') {
+    toast('Đáp án đúng đang trỏ tới một lựa chọn bị bỏ trống. Vui lòng kiểm tra lại!', 'error');
+    return;
+  }
   if (S.editQIdx >= 0) qs[S.editQIdx] = q; else qs.push(q);
   DB.set('questions', qs);
   closeM('q-modal');
@@ -1762,11 +1808,12 @@ function updateQsHeaderCount() {
 }
 
 function downloadTemplate() {
-  var headers = ['Mã câu hỏi','Nội dung câu hỏi','Đáp án A','Đáp án B','Đáp án C','Đáp án D','Đáp án đúng (A/B/C/D)','Chủ đề','Mức độ (easy/medium/hard)','Điểm số'];
+  var headers = ['Mã câu hỏi','Nội dung câu hỏi','Đáp án A','Đáp án B','Đáp án C (tùy chọn)','Đáp án D (tùy chọn)','Đáp án đúng (A/B/C/D)','Chủ đề','Mức độ (easy/medium/hard)','Điểm số'];
   var samples = [
     ['CH061','Thủ đô của Việt Nam là gì?','Hà Nội','Hồ Chí Minh','Đà Nẵng','Huế','A','Kiến thức chung','easy',2],
     ['CH062','RAM là viết tắt của?','Random Access Memory','Read Access Memory','Run All Memory','Real Access Mode','A','Tin học','medium',2.5],
-    ['CH063','Tiêm chủng giúp gì cho cơ thể?','Tạo miễn dịch phòng bệnh','Giảm cân','Tăng chiều cao','Hạ huyết áp','A','Điều dưỡng','hard',3]
+    ['CH063','Sữa mẹ giúp trẻ tăng cường miễn dịch. Đúng hay Sai?','Đúng','Sai','','','A','Điều dưỡng','easy',2],
+    ['CH064','Tiêm chủng giúp gì cho cơ thể?','Tạo miễn dịch phòng bệnh','Giảm cân','Tăng chiều cao','','A','Điều dưỡng','hard',3]
   ];
   var data = [headers].concat(samples);
   var ws = XLSX.utils.aoa_to_sheet(data);
@@ -1808,13 +1855,20 @@ function importExcel() {
           var rawTopic = String(row[7]||'Kiến thức chung').trim();
           var tRes = ensureTopic(rawTopic);
           if (tRes.isNew && newTopics.indexOf(tRes.name) === -1) newTopics.push(tRes.name);
+          var oa=String(row[2]||'').trim(), ob=String(row[3]||'').trim();
+          var oc=String(row[4]||'').trim(), od=String(row[5]||'').trim();
+          // Cần tối thiểu 2 đáp án A, B
+          if (!oa || !ob) { errs++; return; }
+          var cor = String(row[6]||'A').toUpperCase().trim();
+          var valMap = { A:oa, B:ob, C:oc, D:od };
+          // Nếu đáp án đúng trỏ tới ô trống -> bỏ qua dòng lỗi
+          if (!valMap[cor]) { errs++; return; }
           qs.push({
-            id:rid, content:String(row[1]||''),
-            a:String(row[2]||''), b:String(row[3]||''),
-            c:String(row[4]||''), d:String(row[5]||''),
-            correct:String(row[6]||'A').toUpperCase(),
+            id:rid, content:String(row[1]||'').trim(),
+            a:oa, b:ob, c:oc, d:od,
+            correct:cor,
             topic:tRes.name,
-            level:String(row[8]||'medium'),
+            level:String(row[8]||'medium').trim(),
             score:parseFloat(row[9])||2.5
           });
           added++;
