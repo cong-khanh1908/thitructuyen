@@ -4,6 +4,20 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <title>Hệ thống Thi Trực Tuyến</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231a3a6b'/%3E%3Ctext x='16' y='23' font-size='18' text-anchor='middle' fill='white' font-family='Segoe UI,sans-serif' font-weight='700'%3ET%3C/text%3E%3C/svg%3E">
+<script>
+// Bắt các promise bị reject không xử lý (chủ yếu từ Google Sheets/gapi khi cấu hình chưa đúng)
+// để tránh dòng "Uncaught (in promise)" đỏ trong console. KHÔNG ảnh hưởng chức năng thi/lưu kết quả.
+window.addEventListener('unhandledrejection', function(e) {
+  var r = e && e.reason;
+  var code = r && (r.code || r.status);
+  var isGoogleAuth = r && (r.name === 'n' || (r.httpStatus !== undefined) || code === 403 || code === 401);
+  if (isGoogleAuth) {
+    e.preventDefault(); // nuốt lỗi cho gọn console
+    console.warn('[Google Sheets] Đồng bộ bị từ chối (code ' + (code||'?') + '). Kết quả vẫn được lưu cục bộ. Kiểm tra lại cấu hình trong mục Cài đặt.');
+  }
+});
+</script>
 <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
