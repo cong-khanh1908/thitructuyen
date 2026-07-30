@@ -1299,7 +1299,11 @@ function submitExam() {
   var results = DB.get('results') || [];
   results.push(result);
   DB.set('results', results);
-  pushResultToSheet(result);
+  pushResultToSheet(result, function(ok){
+    if (ok) markResultSynced(result.id);
+  });
+  // Thử gửi lại các kết quả trước đó còn kẹt (nếu có)
+  flushPendingResults();
 
   // Show result screen
   var cfg = DB.get('config') || {};
@@ -2641,9 +2645,16 @@ function pgSettings() {
         buildSaDropzone(c) +
       '</div>' +
       (c.saEmail ? '<div class="col-12"><div id="sa-info-box" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px"><i class="fas fa-check-circle" style="color:#2563eb;font-size:1.1rem"></i><div><p style="margin:0;font-size:.85rem;font-weight:600;color:#1e40af">Service Account đã được cấu hình</p><p style="margin:0;font-size:.8rem;color:#3b82f6">'+esc(c.saEmail)+'</p><p style="margin:4px 0 0;font-size:.75rem;color:#3b82f6">⚠️ Nhớ chia sẻ Google Sheet cho email này với quyền <strong>Editor</strong>.</p></div><button onclick="removeSaJson()" style="margin-left:auto;background:none;border:1px solid #bfdbfe;border-radius:8px;padding:4px 10px;color:#3b82f6;font-size:.8rem;cursor:pointer;font-weight:600"><i class="fas fa-times me-1"></i>Xóa</button></div></div>' : '') +
+      '<div class="col-12" style="border-top:1px dashed var(--border);margin-top:6px;padding-top:14px">' +
+        '<label class="fl"><i class="fas fa-bolt me-1" style="color:#f59e0b"></i>URL Google Apps Script <span style="color:var(--text-muted);font-weight:400;font-size:.78rem">(để điện thoại thí sinh ghi được kết quả lên Sheet)</span> <a href="#" onclick="showAppsScriptHelp(event)" style="font-size:.78rem;color:var(--primary-light);font-weight:400;margin-left:6px"><i class="fas fa-question-circle"></i> Hướng dẫn cài đặt</a></label>' +
+        '<input class="fc" id="st-asurl" value="'+esc(c.appsScriptUrl||'')+'" placeholder="https://script.google.com/macros/s/AKfycb.../exec" oninput="clearGsStatus()">' +
+        '<p style="font-size:.78rem;color:var(--text-muted);margin:6px 0 0">Khuyến nghị: dùng cách này để thí sinh trên điện thoại nộp được bài mà không cần lộ khóa Service Account. Nếu để trống, chỉ các máy đã cấu hình Service Account (thường là máy admin) mới ghi được kết quả.</p>' +
+      '</div>' +
+      '<div id="apps-script-help" style="display:none"></div>' +
       '<div class="col-12" id="gs-status-box" style="display:none"></div>' +
       '<div class="col-12" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">' +
         '<button onclick="testGsConnection()" class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600" id="btn-gstest"><i class="fas fa-plug me-1"></i>Kiểm tra kết nối</button>' +
+        '<button onclick="testResultWrite()" class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600" id="btn-testwrite"><i class="fas fa-vial me-1"></i>Gửi thử 1 kết quả</button>' +
         '<button onclick="syncAllResultsToSheet()" class="btn btn-acc" style="border-radius:10px;padding:9px 18px" id="btn-gssync"><i class="fas fa-cloud-upload-alt me-1"></i>Đồng bộ tất cả kết quả</button>' +
         '<button class="btn-primary-custom" style="width:auto;padding:10px 24px" onclick="saveSettings()"><i class="fas fa-save me-1"></i>Lưu cài đặt</button>' +
         '<span id="gs-last-sync" style="font-size:.78rem;color:var(--text-muted)">'+(c.gsLastSync?'Đồng bộ cuối: '+new Date(c.gsLastSync).toLocaleString('vi-VN'):'')+'</span>' +
@@ -2720,6 +2731,8 @@ function saveSettings() {
   if (dsn) c.detailSheetName = (dsn.value || '').trim() || 'ChiTiet';
   var ap = document.getElementById('st-autopost');
   if (ap) c.gsAutoPost = ap.value === '1';
+  var asu = document.getElementById('st-asurl');
+  if (asu) c.appsScriptUrl = (asu.value || '').trim();
   DB.set('config', c);
   addLog('SETTINGS','Cập nhật cài đặt hệ thống');
   toast('Đã lưu cài đặt!','success');
@@ -2833,6 +2846,96 @@ function helpSheetId(e) {
     '<i class="fas fa-info-circle me-2"></i>' +
     'Mở Google Sheet → xem URL: <code>https://docs.google.com/spreadsheets/d/<strong>[ID ở đây]</strong>/edit</code>. ' +
     'Sau đó chia sẻ Sheet với email Service Account (quyền Editor).');
+}
+
+// Mã Apps Script để admin dán vào Google Sheet → Tiện ích mở rộng → Apps Script
+var APPS_SCRIPT_CODE =
+'function doPost(e){\n' +
+'  try{\n' +
+'    var body = JSON.parse(e.postData.contents);\n' +
+'    var ss = SpreadsheetApp.getActiveSpreadsheet();\n' +
+'    writeRows_(ss, body.summaryTab || "KetQua", body.summaryHeader, body.summaryRows);\n' +
+'    writeRows_(ss, body.detailTab  || "ChiTiet", body.detailHeader,  body.detailRows);\n' +
+'    return json_({ok:true});\n' +
+'  }catch(err){ return json_({ok:false, error:String(err)}); }\n' +
+'}\n' +
+'function writeRows_(ss, name, header, rows){\n' +
+'  if(!rows || !rows.length) return;\n' +
+'  var sh = ss.getSheetByName(name);\n' +
+'  if(!sh){ sh = ss.insertSheet(name); if(header) sh.appendRow(header); }\n' +
+'  else if(sh.getLastRow()===0 && header){ sh.appendRow(header); }\n' +
+'  sh.getRange(sh.getLastRow()+1, 1, rows.length, rows[0].length).setValues(rows);\n' +
+'}\n' +
+'function json_(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }\n' +
+'function doGet(){ return json_({ok:true, msg:"San sang nhan ket qua"}); }';
+
+function showAppsScriptHelp(e) {
+  if (e) e.preventDefault();
+  var box = document.getElementById('apps-script-help');
+  if (!box) return;
+  if (box.style.display === 'block') { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  box.innerHTML =
+    '<div class="sync-info" style="margin-top:6px">' +
+      '<p style="margin:0 0 8px;font-weight:700"><i class="fas fa-list-ol me-1"></i>Cách tạo URL Apps Script (làm 1 lần, ~3 phút):</p>' +
+      '<ol style="margin:0 0 10px;padding-left:20px;line-height:1.75">' +
+        '<li>Mở Google Sheet kết quả → menu <strong>Tiện ích mở rộng</strong> → <strong>Apps Script</strong>.</li>' +
+        '<li>Xóa hết code mẫu, dán đoạn mã bên dưới vào, bấm <strong>Lưu</strong>.</li>' +
+        '<li>Bấm <strong>Triển khai</strong> (Deploy) → <strong>Tùy chọn triển khai mới</strong> → loại <strong>Ứng dụng web</strong>.</li>' +
+        '<li>Mục "Người có quyền truy cập" chọn <strong>Bất kỳ ai</strong> (Anyone) → <strong>Triển khai</strong> → cấp quyền.</li>' +
+        '<li>Sao chép <strong>URL ứng dụng web</strong> (kết thúc bằng <code>/exec</code>) và dán vào ô "URL Google Apps Script" ở trên.</li>' +
+      '</ol>' +
+      '<div style="position:relative">' +
+        '<textarea id="as-code" readonly style="width:100%;height:150px;font-family:monospace;font-size:.72rem;line-height:1.4;border:1px solid var(--border);border-radius:10px;padding:10px;background:#0f172a;color:#e2e8f0;white-space:pre;overflow:auto">'+esc(APPS_SCRIPT_CODE)+'</textarea>' +
+        '<button onclick="copyAppsScript()" class="btn btn-acc" style="position:absolute;top:8px;right:8px;border-radius:8px;padding:5px 12px;font-size:.78rem"><i class="fas fa-copy me-1"></i>Sao chép mã</button>' +
+      '</div>' +
+      '<p style="margin:10px 0 0;font-size:.78rem;color:var(--text-muted)"><i class="fas fa-shield-alt me-1"></i>Cách này an toàn: điện thoại thí sinh chỉ gửi kết quả tới URL, không cần và không chứa khóa Service Account.</p>' +
+    '</div>';
+}
+
+function copyAppsScript() {
+  var ta = document.getElementById('as-code');
+  if (!ta) return;
+  ta.select();
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(APPS_SCRIPT_CODE).then(function(){ toast('Đã sao chép mã Apps Script!','success'); });
+  } else {
+    try { document.execCommand('copy'); toast('Đã sao chép mã!','success'); } catch(e){}
+  }
+}
+
+// Gửi thử 1 kết quả mẫu để admin xác nhận kênh ghi kết quả hoạt động
+function testResultWrite() {
+  var c = DB.get('config') || {};
+  // đọc giá trị đang nhập (chưa lưu) để test nhanh
+  var asu = document.getElementById('st-asurl');
+  if (asu && asu.value.trim()) c.appsScriptUrl = asu.value.trim();
+  var sid = document.getElementById('st-sid');
+  if (sid && sid.value.trim()) c.sheetId = sid.value.trim();
+  if (!c.appsScriptUrl && (!c.saJson || !c.sheetId)) {
+    showGsStatus('error','<i class="fas fa-times-circle me-2"></i>Cần URL Apps Script, hoặc Spreadsheet ID + Service Account để gửi thử.');
+    return;
+  }
+  var btn = document.getElementById('btn-testwrite');
+  if (btn) { btn.disabled=true; btn.innerHTML='<i class="fas fa-spinner fa-spin me-1"></i>Đang gửi thử...'; }
+  showGsStatus('warn','<i class="fas fa-spinner fa-spin me-2"></i>Đang gửi 1 dòng kết quả thử lên Google Sheet...');
+  var sample = {
+    id: 'TEST-'+Date.now(), time: new Date().toISOString(),
+    name: '[GỬI THỬ] Kiểm tra ghi kết quả', dob: '01/01/2000',
+    unit: 'Kiểm tra hệ thống', phone: '0000000000',
+    examCode: 'TEST', correct: 0, totalQ: 0, score: 0, timeUsed: '0:00',
+    violations: 0, details: []
+  };
+  // gọi trực tiếp lớp đẩy, bỏ qua điều kiện gsAutoPost
+  pushResultsToSheet([sample], { silent: true, onDone: function(ok, msg){
+    if (btn) { btn.disabled=false; btn.innerHTML='<i class="fas fa-vial me-1"></i>Gửi thử 1 kết quả'; }
+    if (ok) {
+      showGsStatus('ok','<i class="fas fa-check-circle me-2"></i><strong>Ghi kết quả hoạt động!</strong> Kiểm tra tab kết quả trong Google Sheet sẽ thấy dòng "[GỬI THỬ]". Thí sinh trên điện thoại sẽ nộp được bài bình thường.');
+      toast('✅ Kênh ghi kết quả hoạt động!','success');
+    } else {
+      showGsStatus('error','<i class="fas fa-times-circle me-2"></i>Gửi thử thất bại: '+esc(msg||'')+'. Nếu dùng Apps Script, kiểm tra lại URL (kết thúc bằng /exec) và đã triển khai với quyền "Bất kỳ ai".');
+    }
+  }});
 }
 
 function testGsConnection() {
@@ -3065,9 +3168,66 @@ function pushResultsToSheet(results, opts) {
   opts = opts || {};
   var c = DB.get('config') || {};
   var done = opts.onDone || function(){};
-  if (!c.saJson || !c.sheetId) { done(false, 'Chưa cấu hình Google Sheet'); return; }
   if (!results || !results.length) { done(false, 'Không có dữ liệu'); return; }
 
+  // Ưu tiên kênh Apps Script (chạy được trên MỌI thiết bị, kể cả điện thoại thí
+  // sinh không có Service Account). Nếu không có URL Apps Script thì mới dùng
+  // Service Account (thường chỉ máy admin có).
+  if (c.appsScriptUrl) {
+    pushResultsViaAppsScript(results, c, opts, done);
+    return;
+  }
+  if (!c.saJson || !c.sheetId) {
+    done(false, 'Chưa có URL Apps Script và cũng chưa cấu hình Service Account — không thể ghi kết quả từ thiết bị này.');
+    return;
+  }
+  pushResultsViaServiceAccount(results, c, opts, done);
+}
+
+// ── Kênh 1: Apps Script Web App (khuyến nghị cho thí sinh trên điện thoại) ────
+function pushResultsViaAppsScript(results, c, opts, done) {
+  var payload = {
+    action: 'append',
+    summaryTab: c.sheetName || 'KetQua',
+    detailTab: c.detailSheetName || 'ChiTiet',
+    summaryHeader: GS_SUMMARY_HEADER,
+    detailHeader: GS_DETAIL_HEADER,
+    summaryRows: results.map(gsSummaryRow),
+    detailRows: results.reduce(function(acc, r){ return acc.concat(gsDetailRows(r)); }, [])
+  };
+  // Dùng text/plain để tránh preflight CORS (Apps Script chấp nhận và tự parse JSON).
+  fetch(c.appsScriptUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(payload)
+  }).then(function(r){
+    return r.text().then(function(txt){
+      var ok = r.ok;
+      var data = null; try { data = JSON.parse(txt); } catch(e){}
+      if (data && data.ok === false) ok = false;
+      if (ok) {
+        var cv = DB.get('config')||{}; cv.gsLastSync=new Date().toISOString();
+        DB._syncSuppress = true; try { DB.set('config',cv); } finally { DB._syncSuppress = false; }
+        addLog('SHEETS','Ghi '+results.length+' kết quả lên Google Sheet qua Apps Script');
+        if (!opts.silent) toast('✅ Đã ghi '+results.length+' kết quả lên Google Sheet!','success');
+        done(true, 'OK');
+      } else {
+        var msg = (data && data.error) ? data.error : ('HTTP '+r.status);
+        if (!opts.silent) toast('❌ Ghi kết quả (Apps Script) thất bại: '+msg,'error');
+        console.warn('[AppsScript] err:', msg, txt.slice(0,200));
+        done(false, msg);
+      }
+    });
+  }).catch(function(e){
+    var msg = (e&&e.message)?e.message:String(e);
+    if (!opts.silent) toast('❌ Không gửi được kết quả tới máy chủ: '+msg,'error');
+    console.warn('[AppsScript] network err:', msg);
+    done(false, msg);
+  });
+}
+
+// ── Kênh 2: Service Account trực tiếp (dùng khi thiết bị có khóa, vd máy admin) ─
+function pushResultsViaServiceAccount(results, c, opts, done) {
   var sa = null;
   try { sa = JSON.parse(c.saJson); } catch(e) { done(false, 'Service Account JSON không hợp lệ'); return; }
 
@@ -3103,7 +3263,8 @@ function pushResultsToSheet(results, opts) {
         return gsAppendRows(c.sheetId, token, detailTab, detailRows);
       });
     }).then(function(){
-      var cv = DB.get('config')||{}; cv.gsLastSync=new Date().toISOString(); DB.set('config',cv);
+      var cv = DB.get('config')||{}; cv.gsLastSync=new Date().toISOString();
+      DB._syncSuppress = true; try { DB.set('config',cv); } finally { DB._syncSuppress = false; }
       addLog('SHEETS','Đồng bộ '+results.length+' kết quả lên Google Sheet ('+detailRows.length+' dòng chi tiết)');
       if (!opts.silent) toast('✅ Đã ghi '+results.length+' kết quả + chi tiết lên Google Sheet!','success');
       done(true, 'OK');
@@ -3117,16 +3278,51 @@ function pushResultsToSheet(results, opts) {
 }
 
 // Tự động đẩy 1 kết quả ngay sau khi nộp bài (giữ tên hàm cũ để không phá vỡ nơi gọi)
-function pushResultToSheet(result) {
+function pushResultToSheet(result, cb) {
+  cb = cb || function(){};
   var c = DB.get('config') || {};
-  if (!c.gsAutoPost || !c.saJson || !c.sheetId) return; // im lặng bỏ qua nếu chưa bật/chưa cấu hình
-  pushResultsToSheet([result], { silent: false });
+  if (c.gsAutoPost === false) { cb(false); return; } // admin tắt ghi tự động
+  // Cần ít nhất một kênh ghi: Apps Script URL, hoặc Service Account + Sheet ID
+  if (!c.appsScriptUrl && (!c.saJson || !c.sheetId)) { cb(false); return; }
+  pushResultsToSheet([result], { silent: false, onDone: function(ok){ cb(ok); } });
+}
+
+// Đánh dấu 1 kết quả đã ghi thành công lên Sheet
+function markResultSynced(id) {
+  var results = DB.get('results') || [];
+  var changed = false;
+  results.forEach(function(r){ if (r.id === id && !r.synced) { r.synced = true; changed = true; } });
+  if (changed) { DB._syncSuppress = true; try { DB.set('results', results); } finally { DB._syncSuppress = false; } }
+}
+
+// Gửi lại các kết quả còn kẹt (chưa ghi được lên Sheet) — gọi khi nộp bài & khi mở app
+var _flushing = false;
+function flushPendingResults() {
+  if (_flushing) return;
+  var c = DB.get('config') || {};
+  if (c.gsAutoPost === false) return;
+  if (!c.appsScriptUrl && (!c.saJson || !c.sheetId)) return;
+  var results = DB.get('results') || [];
+  var pending = results.filter(function(r){ return !r.synced; });
+  if (!pending.length) return;
+  _flushing = true;
+  // Đẩy từng cái để đánh dấu chính xác cái nào thành công
+  var i = 0;
+  function next() {
+    if (i >= pending.length) { _flushing = false; return; }
+    var r = pending[i++];
+    pushResultsToSheet([r], { silent: true, onDone: function(ok){
+      if (ok) markResultSynced(r.id);
+      setTimeout(next, 400); // giãn nhẹ để tránh dồn request
+    }});
+  }
+  next();
 }
 
 // ── Đồng bộ TẤT CẢ kết quả đang lưu lên Google Sheet (nút trong Cài đặt) ────
 function syncAllResultsToSheet() {
   var c = DB.get('config') || {};
-  if (!c.saJson || !c.sheetId) { showGsStatus('error','<i class="fas fa-times-circle me-2"></i>Vui lòng cấu hình Spreadsheet ID và Service Account trước.'); return; }
+  if (!c.appsScriptUrl && (!c.saJson || !c.sheetId)) { showGsStatus('error','<i class="fas fa-times-circle me-2"></i>Cần có URL Apps Script, hoặc Spreadsheet ID + Service Account trước khi đồng bộ.'); return; }
   var results = DB.get('results') || [];
   if (!results.length) { showGsStatus('warn','<i class="fas fa-info-circle me-2"></i>Chưa có kết quả nào để đồng bộ.'); return; }
   if (!confirm('Đồng bộ toàn bộ '+results.length+' kết quả (kèm chi tiết từng câu) lên Google Sheet?\n\nLưu ý: thao tác này ghi thêm (append) — có thể tạo dòng trùng nếu bạn đã đồng bộ trước đó.')) return;
@@ -3359,14 +3555,20 @@ function pushConfigToCloud(opts) {
     }).then(function(){
       // Lấy gid của tab cấu hình để dùng cho đường đọc CSV công khai (dự phòng)
       return fetchSyncTabGid(c.sheetId, token).then(function(gid){
-        if (gid != null) DB.set('syncTabGid', gid);
+        if (gid != null) { DB._syncSuppress = true; try { DB.set('syncTabGid', gid); } finally { DB._syncSuppress = false; } }
       }).catch(function(){});
     }).then(function(){
-      var cv = DB.get('config')||{}; cv.cfgLastPush = new Date().toISOString();
-      var g = DB.get('syncTabGid'); if (g != null) cv.syncTabGid = g;
-      DB.set('config', cv);
-      // Lưu Spreadsheet ID để lần sau (kể cả mobile) tự biết đọc từ đâu
-      DB.set(SYNC_LS_ID, c.sheetId);
+      // Ghi các trường metadata nội bộ (thời điểm đẩy, gid) — KHÔNG được kích hoạt
+      // một vòng đẩy mới, nếu không sẽ lặp vô tận. Vì vậy bật cờ chặn quanh DB.set.
+      DB._syncSuppress = true;
+      try {
+        var cv = DB.get('config')||{}; cv.cfgLastPush = new Date().toISOString();
+        var g = DB.get('syncTabGid'); if (g != null) cv.syncTabGid = g;
+        DB.set('config', cv);
+        DB.set(SYNC_LS_ID, c.sheetId);
+      } finally {
+        DB._syncSuppress = false;
+      }
       addLog('SYNC','Đẩy cấu hình & ngân hàng đề lên đám mây ('+chunks.length+' phần, '+jsonStr.length+' ký tự)');
       done(true, 'OK');
     }).catch(function(e){
@@ -3612,11 +3814,13 @@ function doAutoSync(sheetId, opts) {
       DB.set(SYNC_LS_ID, sheetId);
       refreshCandidateUI();
       showSyncBadge('ok','Đã cập nhật cấu hình mới nhất');
+      try { flushPendingResults(); } catch(e){}
       return true;
     } else if (payload) {
       DB.set(SYNC_LS_ID, sheetId);
       if (opts.showLoading) showSyncBadge('ok','Cấu hình đã là mới nhất');
       else showSyncBadge('none','');
+      try { flushPendingResults(); } catch(e){}
       return false;
     } else {
       // Đọc về rỗng: thường do Sheet chưa chia sẻ công khai hoặc chưa có cấu hình.
