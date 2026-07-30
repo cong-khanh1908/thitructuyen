@@ -113,11 +113,12 @@ tr.qs-row-selected:hover{background:#e0e7ff}
 .exam-body{flex:1;overflow-y:auto;padding:24px}
 .qcard{background:white;border-radius:20px;padding:32px;max-width:780px;margin:0 auto}
 .qnum{background:var(--primary);color:white;border-radius:10px;padding:4px 14px;font-size:.8rem;font-weight:700;display:inline-block;margin-bottom:16px}
-.qtext{font-size:1.05rem;font-weight:600;margin-bottom:24px;line-height:1.6}
+.qtext{font-size:1.05rem;font-weight:600;margin-bottom:24px;line-height:1.6;overflow-wrap:break-word;word-break:break-word}
 .aopt{border:2px solid var(--border);border-radius:12px;padding:14px 18px;margin-bottom:12px;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:14px}
 .aopt:hover{border-color:var(--primary);background:#f0f4ff}
 .aopt.selected{border-color:var(--primary);background:#eef2ff}
 .aopt .ol{width:34px;height:34px;border-radius:8px;background:var(--border);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.9rem;flex-shrink:0;transition:all .2s}
+.aopt .atxt{flex:1;min-width:0;overflow-wrap:break-word;word-break:break-word}
 .aopt.selected .ol{background:var(--primary);color:white}
 .aopt.correct{border-color:var(--success);background:#f0fdf4}
 .aopt.wrong{border-color:var(--danger);background:#fef2f2}
@@ -137,10 +138,12 @@ tr.qs-row-selected:hover{background:#e0e7ff}
 .viol-modal{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px}
 .viol-box{background:white;border-radius:20px;padding:40px;max-width:420px;text-align:center;width:100%}
 /* FAB Nộp bài - luôn nổi trên violation modal */
-#submit-fab{position:fixed;bottom:24px;right:24px;z-index:10001;background:var(--accent);color:white;border:none;border-radius:14px;padding:14px 22px;font-weight:700;font-size:1rem;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,.35);display:none;align-items:center;gap:8px;transition:all .2s;animation:fab-pop .3s ease}
+#submit-fab{position:fixed;bottom:24px;right:24px;z-index:10001;background:var(--accent);color:white;border:none;border-radius:14px;padding:14px 22px;font-weight:700;font-size:1rem;line-height:1;white-space:nowrap;width:auto;height:auto;max-width:calc(100vw - 32px);cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;gap:8px;transition:background .2s,transform .2s,box-shadow .2s;animation:fab-pop .3s ease}
 #submit-fab:hover{background:var(--accent-dark);transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.45)}
-#submit-fab.visible{display:flex}
-@media(max-width:600px){#submit-fab{bottom:auto;top:calc(env(safe-area-inset-top,0px) + 8px);right:8px;padding:10px 14px;font-size:.85rem;border-radius:10px;z-index:9999}}
+#submit-fab.visible{display:inline-flex}
+/* Trên điện thoại đã có nút "Nộp bài" trong thanh tiêu đề bài thi → ẩn FAB để
+   không che nội dung câu hỏi/đáp án. */
+@media(max-width:768px){#submit-fab.visible{display:none}}
 @keyframes fab-pop{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}
 /* RESULT */
 #screen-result{background:linear-gradient(135deg,#1a3a6b 0%,#0d2137 100%)}
@@ -239,15 +242,23 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 @media(max-width:768px){
   .sync-badge{font-size:.78rem;padding:9px 15px}
   .exam-hdr{flex-wrap:wrap;gap:10px;padding:12px 14px;padding-top:calc(12px + env(safe-area-inset-top))}
-  .exam-hdr .ei h4{font-size:1rem}
+  .exam-hdr .ei{flex:1 1 100%;min-width:0}
+  .exam-hdr .ei h4{font-size:1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .exam-hdr .ei small{font-size:.78rem}
+  /* Khối phải (đồng hồ + nút Nộp bài) chiếm trọn 1 hàng, dàn đều 2 bên */
+  .exam-hdr > div:last-child{flex:1 1 100%;justify-content:space-between;gap:10px!important}
+  .exam-hdr > div:last-child .timer-d{flex:0 0 auto}
+  .exam-hdr > div:last-child button{flex:0 0 auto;white-space:nowrap}
   .exam-body{padding:14px}
-  #submit-fab{bottom:calc(16px + env(safe-area-inset-bottom))}
 }
 @media(max-width:480px){
   .exam-hdr h4{font-size:.95rem}
   .qcard .qtext{font-size:1rem;line-height:1.55}
-  .timer-d{padding:6px 10px}
+  .timer-d{padding:6px 12px}
   .timer-d .tv{font-size:1.15rem}
+  .timer-d .tl{font-size:.68rem}
+  /* nút Nộp bài trong tiêu đề bài thi: gọn, không chiếm quá nhiều chỗ */
+  .exam-hdr > div:last-child button{padding:9px 14px;font-size:.9rem}
   /* nút Trước/Tiếp to hơn, dễ chạm */
   .qcard .btn{padding:11px 16px;font-size:.92rem}
   .ss{padding:18px 14px}
@@ -372,9 +383,9 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   <div style="display:flex;flex:1;overflow:hidden">
     <div class="exam-body flex-1 blur-hide" id="exam-ca">
       <div class="qcard">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:10px;flex-wrap:wrap">
           <span class="qnum" id="qnum">Câu 1</span>
-          <span style="font-size:.82rem;color:var(--text-muted)" id="qac">Đã trả lời: 0/40</span>
+          <span style="font-size:.82rem;color:var(--text-muted);white-space:nowrap" id="qac">Đã trả lời: 0/40</span>
         </div>
         <div class="pg mb-4"><div class="pgb" id="epg" style="width:0%"></div></div>
         <p class="qtext" id="qtxt">Đang tải...</p>
@@ -1090,7 +1101,7 @@ function renderQ() {
     var sel = S.answers[S.qi] === lt ? ' selected' : '';
     html += '<div class="aopt' + sel + '" data-lt="' + lt + '">';
     html += '<div class="ol">' + lt + '</div>';
-    html += '<div>' + esc(q[lt] || '') + '</div>';
+    html += '<div class="atxt">' + esc(q[lt] || '') + '</div>';
     html += '</div>';
   });
   var container = document.getElementById('ans-container');
