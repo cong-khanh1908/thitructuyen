@@ -272,9 +272,9 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     </div>
     <div style="text-align:center">
       <p style="color:var(--text-muted);margin-bottom:24px">Tham gia kỳ thi không cần tài khoản</p>
-      <button class="btn-primary-custom" onclick="showScreen('exam-portal')"><i class="fas fa-play-circle me-2"></i>Vào Phòng Thi</button>
-      <button class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600;margin-top:12px;width:100%" onclick="manualSync()"><i class="fas fa-sync-alt me-2"></i>Đồng bộ cấu hình</button>
-      <p style="margin-top:10px;font-size:.75rem;color:var(--text-muted)"><i class="fas fa-mobile-alt me-1"></i>Trên điện thoại, nhấn <strong>Đồng bộ cấu hình</strong> để nhận cài đặt mới nhất từ Ban tổ chức.</p>
+      <button class="btn-primary-custom" onclick="enterExamPortal()"><i class="fas fa-play-circle me-2"></i>Vào Phòng Thi</button>
+      <button class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600;margin-top:12px;width:100%" onclick="manualSync()"><i class="fas fa-sync-alt me-2"></i>Đồng bộ lại cấu hình</button>
+      <p style="margin-top:10px;font-size:.75rem;color:var(--text-muted)"><i class="fas fa-mobile-alt me-1"></i>Ứng dụng <strong>tự động đồng bộ</strong> cấu hình mới nhất khi mở. Nút trên chỉ dùng khi cần đồng bộ lại thủ công.</p>
     </div>
     <p style="text-align:center;margin-top:20px;font-size:.8rem;color:var(--text-muted)">© 2026 Hệ Thống Thi Trực Tuyến</p>
   </div>
@@ -2613,18 +2613,18 @@ function pgSettings() {
     '</div></div>' +
     // ── ĐỒNG BỘ ĐA THIẾT BỊ (mobile tự nhận cấu hình) ──
     '<div class="ss" id="sync-section"><h6><i class="fas fa-mobile-alt me-2"></i>Đồng bộ cấu hình đa thiết bị (PC ⇄ Mobile)</h6>' +
-    '<p style="color:var(--text-muted);font-size:.85rem;margin-top:-8px;margin-bottom:14px">Toàn bộ <strong>cấu hình kỳ thi, ngân hàng câu hỏi, đề thi, chủ đề và danh mục đơn vị</strong> sẽ được lưu lên chính Google Sheet ở trên (tab <code>'+SYNC_TAB+'</code>). Khi thí sinh mở phần mềm trên điện thoại, ứng dụng <strong>tự động tải cấu hình mới nhất</strong> về để sử dụng — không cần thao tác thủ công.</p>' +
+    '<p style="color:var(--text-muted);font-size:.85rem;margin-top:-8px;margin-bottom:14px">Toàn bộ <strong>cấu hình kỳ thi, ngân hàng câu hỏi, đề thi, chủ đề và danh mục đơn vị</strong> được lưu lên chính Google Sheet ở trên (tab <code>'+SYNC_TAB+'</code>). Khi thí sinh mở phần mềm trên điện thoại, ứng dụng <strong>tự động đồng bộ ngay lập tức và định kỳ trong nền</strong> — không cần bấm bất kỳ nút nào.</p>' +
     '<div class="sync-info" style="margin-bottom:14px">' +
       '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
         '<span class="sync-status-pill '+((c.saJson&&c.sheetId)?'on':'off')+'">'+
           ((c.saJson&&c.sheetId)?'<i class="fas fa-check-circle"></i> Sẵn sàng đồng bộ':'<i class="fas fa-exclamation-triangle"></i> Chưa đủ điều kiện')+'</span>' +
         (c.cfgLastPush?'<span style="font-size:.78rem;color:var(--text-muted)">Đẩy lần cuối: '+new Date(c.cfgLastPush).toLocaleString('vi-VN')+'</span>':'') +
       '</div>' +
-      '<p style="margin:0 0 6px"><strong>Bước để mobile nhận được cấu hình:</strong></p>' +
+      '<p style="margin:0 0 6px"><strong>3 cách để mobile tự đồng bộ (không cần thao tác):</strong></p>' +
       '<ol style="margin:0;padding-left:20px;line-height:1.7">' +
-        '<li>Bấm <strong>“Đẩy cấu hình lên máy chủ”</strong> bên dưới sau mỗi lần chỉnh sửa (hệ thống cũng tự đẩy khi bạn Lưu).</li>' +
-        '<li>Mở Google Sheet → <strong>Chia sẻ</strong> → chọn <em>“Bất kỳ ai có đường liên kết – Người xem”</em> (để điện thoại đọc được mà không cần đăng nhập).</li>' +
-        '<li>Gửi <strong>Mã bảng tính (Spreadsheet ID)</strong> cho thí sinh, hoặc dùng chung đường link/QR có sẵn ID.</li>' +
+        '<li><strong>Link/QR:</strong> dùng “Tạo link/QR đồng bộ” — thí sinh mở link hoặc quét QR là app tự đồng bộ.</li>' +
+        '<li><strong>Bản phát hành nhúng sẵn:</strong> dùng “Tải bản phát hành tự đồng bộ” để tạo file HTML đã khắc sẵn ID — gửi file đó cho thí sinh, mở là tự đồng bộ.</li>' +
+        '<li><strong>Quan trọng:</strong> mở Google Sheet → <strong>Chia sẻ</strong> → chọn <em>“Bất kỳ ai có đường liên kết – Người xem”</em> để điện thoại đọc được mà không cần đăng nhập.</li>' +
       '</ol>' +
       (c.sheetId?'<p style="margin:10px 0 0"><strong>Spreadsheet ID:</strong> <code>'+esc(c.sheetId)+'</code> <button onclick="copySheetId()" style="border:none;background:#eef2ff;border-radius:6px;padding:3px 9px;font-size:.75rem;color:var(--primary);cursor:pointer;font-weight:600;margin-left:4px"><i class="fas fa-copy me-1"></i>Sao chép</button></p>':'') +
     '</div>' +
@@ -2632,6 +2632,7 @@ function pgSettings() {
       '<button onclick="pushConfigManual()" class="btn btn-acc" style="border-radius:10px;padding:9px 18px" id="btn-cfgpush"><i class="fas fa-cloud-upload-alt me-1"></i>Đẩy cấu hình lên máy chủ</button>' +
       '<button onclick="pullConfigManual()" class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600" id="btn-cfgpull"><i class="fas fa-cloud-download-alt me-1"></i>Tải lại cấu hình từ máy chủ</button>' +
       (c.sheetId?'<button onclick="showSyncLink()" class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600"><i class="fas fa-qrcode me-1"></i>Tạo link/QR đồng bộ cho thí sinh</button>':'') +
+      (c.sheetId?'<button onclick="downloadSelfSyncFile()" class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600"><i class="fas fa-file-download me-1"></i>Tải bản phát hành tự đồng bộ</button>':'') +
       '<span id="cfg-sync-status" style="font-size:.8rem;color:var(--text-muted)"></span>' +
     '</div>' +
     '<div id="sync-link-box" style="display:none;margin-top:14px"></div>' +
@@ -3222,6 +3223,15 @@ var SYNC_TAB = '_HeThong';          // tab lưu cấu hình (ẩn khỏi ngườ
 var SYNC_CHUNK = 45000;             // số ký tự tối đa mỗi ô (giới hạn Sheets ~50k)
 var SYNC_KEYS = ['config','questions','examsets','topics','topicsMeta','units'];
 var SYNC_LS_ID = 'syncSheetId';     // nơi lưu Spreadsheet ID riêng cho việc đọc cấu hình
+var SYNC_POLL_MS = 60000;           // tự đồng bộ nền mỗi 60 giây
+
+// ID bảng tính "khắc sẵn" vào bản phát hành. Khi admin bấm "Nhúng ID vào file"
+// giá trị này được thay để mọi thiết bị mở file/link đều tự biết nơi đồng bộ,
+// KHÔNG cần nhập gì. Để trống nếu phát hành qua link ?sheet=ID.
+var EMBEDDED_SHEET_ID = '__EMBED_SHEET_ID__';
+function embeddedSheetId() {
+  return (EMBEDDED_SHEET_ID && EMBEDDED_SHEET_ID.indexOf('__EMBED') !== 0) ? EMBEDDED_SHEET_ID : '';
+}
 
 // Gói toàn bộ CSDL (trừ kết quả & log – những thứ mang tính cục bộ/riêng tư).
 // LƯU Ý BẢO MẬT: không đưa Service Account (private key) và mật khẩu admin lên
@@ -3420,33 +3430,98 @@ function cloudIsNewer(payload) {
 function getSheetIdFromUrl() {
   try {
     var q = new URLSearchParams(window.location.search).get('sheet');
-    if (q) return q.trim();
+    if (q) return extractSheetId(q);
     var h = (window.location.hash || '').match(/sheet=([^&]+)/);
-    if (h) return decodeURIComponent(h[1]).trim();
+    if (h) return extractSheetId(decodeURIComponent(h[1]));
   } catch(e){}
   return null;
 }
 
-function autoSyncOnBoot() {
-  // Ưu tiên ID nhúng trong URL (admin phát link/QR) → mobile đồng bộ tức thì, không cần nhập
-  var urlId = getSheetIdFromUrl();
-  if (urlId) DB.set(SYNC_LS_ID, urlId);
-  var sheetId = urlId || (DB.get('config')||{}).sheetId || DB.get(SYNC_LS_ID);
-  if (!sheetId) return; // chưa có gì để đồng bộ
-  showSyncBadge('loading','Đang đồng bộ cấu hình từ máy chủ...');
-  fetchCloudConfig(sheetId).then(function(payload){
+// Chấp nhận cả ID trần lẫn URL Google Sheets đầy đủ
+function extractSheetId(v) {
+  v = (v || '').trim();
+  var m = v.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (m) return m[1];
+  return v;
+}
+
+// Tìm Spreadsheet ID từ mọi nguồn, theo thứ tự ưu tiên:
+// URL (link/QR admin phát) → ID nhúng sẵn trong bản phát hành → config admin cục bộ
+// → ID đã lưu từ lần đồng bộ trước.
+function resolveSheetId() {
+  return getSheetIdFromUrl()
+      || embeddedSheetId()
+      || (DB.get('config')||{}).sheetId
+      || DB.get(SYNC_LS_ID)
+      || null;
+}
+
+// Trạng thái đồng bộ dùng nội bộ
+var _syncState = { firstDone: false, inFlight: false, pollTimer: null };
+
+// Thực hiện một lần đồng bộ (dùng chung cho boot, nền, và focus)
+function doAutoSync(sheetId, opts) {
+  opts = opts || {};
+  if (_syncState.inFlight) return Promise.resolve(false);
+  sheetId = sheetId || resolveSheetId();
+  if (!sheetId) return Promise.resolve(false);
+  _syncState.inFlight = true;
+  if (opts.showLoading) showSyncBadge('loading','Đang đồng bộ cấu hình...');
+  return fetchCloudConfig(sheetId).then(function(payload){
+    _syncState.inFlight = false;
+    _syncState.firstDone = true;
     if (payload && cloudIsNewer(payload)) {
       applyCloudConfig(payload);
       DB.set(SYNC_LS_ID, sheetId);
-      showSyncBadge('ok','Đã cập nhật cấu hình mới nhất từ Ban tổ chức');
-      // nếu đang ở màn thí sinh, cập nhật lại tiêu đề/đơn vị hiển thị
       refreshCandidateUI();
+      showSyncBadge('ok','Đã cập nhật cấu hình mới nhất');
+      return true;
     } else if (payload) {
-      showSyncBadge('ok','Cấu hình đã là mới nhất');
+      DB.set(SYNC_LS_ID, sheetId);
+      if (opts.showLoading) showSyncBadge('ok','Cấu hình đã là mới nhất');
+      else showSyncBadge('none','');
+      return false;
     } else {
       showSyncBadge('none','');
+      return false;
     }
-  }).catch(function(){ showSyncBadge('none',''); });
+  }).catch(function(){
+    _syncState.inFlight = false;
+    _syncState.firstDone = true;
+    showSyncBadge('none','');
+    return false;
+  });
+}
+
+function autoSyncOnBoot() {
+  var urlId = getSheetIdFromUrl();
+  if (urlId) DB.set(SYNC_LS_ID, urlId);
+  var sheetId = resolveSheetId();
+  if (!sheetId) return; // thực sự chưa có nguồn nào để đồng bộ
+
+  // 1) Đồng bộ ngay khi mở app — hoàn toàn tự động, không cần thao tác
+  doAutoSync(sheetId, { showLoading: true });
+
+  // 2) Đồng bộ nền định kỳ để cấu hình luôn mới (không làm phiền người dùng)
+  if (_syncState.pollTimer) clearInterval(_syncState.pollTimer);
+  _syncState.pollTimer = setInterval(function(){
+    // không đồng bộ trong lúc đang làm bài để tránh xáo trộn đề đang thi
+    if (S && S.screen === 'exam') return;
+    doAutoSync(resolveSheetId(), { showLoading: false });
+  }, SYNC_POLL_MS);
+
+  // 3) Đồng bộ lại mỗi khi người dùng quay lại tab / mở lại app trên mobile
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'visible' && (!S || S.screen !== 'exam')) {
+      doAutoSync(resolveSheetId(), { showLoading: false });
+    }
+  });
+  window.addEventListener('focus', function(){
+    if (!S || S.screen !== 'exam') doAutoSync(resolveSheetId(), { showLoading: false });
+  });
+  window.addEventListener('online', function(){
+    doAutoSync(resolveSheetId(), { showLoading: true });
+  });
 }
 
 // Làm mới vài chỗ hiển thị phía thí sinh sau khi nạp cấu hình mới
@@ -3503,6 +3578,20 @@ function manualSync() {
   });
 }
 
+// Vào phòng thi — bảo đảm cấu hình đã đồng bộ (nếu có nguồn) trước khi cho thi,
+// nhưng KHÔNG bắt người dùng chờ lâu: nếu quá 4s thì vẫn cho vào.
+function enterExamPortal() {
+  var sheetId = resolveSheetId();
+  if (!sheetId || _syncState.firstDone) { showScreen('exam-portal'); return; }
+  showSyncBadge('loading','Đang tải cấu hình mới nhất...');
+  var proceeded = false;
+  var go = function(){ if (proceeded) return; proceeded = true; showScreen('exam-portal'); };
+  var guard = setTimeout(go, 4000); // không để người dùng kẹt nếu mạng chậm
+  doAutoSync(sheetId, { showLoading: true }).then(function(){
+    clearTimeout(guard); go();
+  }).catch(function(){ clearTimeout(guard); go(); });
+}
+
 // ── Nút đẩy cấu hình thủ công (phía admin, trong Cài đặt) ────────────────────
 function pushConfigManual() {
   var c = DB.get('config') || {};
@@ -3552,6 +3641,31 @@ function pullConfigManual() {
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-download-alt me-1"></i>Tải lại cấu hình từ máy chủ'; }
     toast('❌ Lỗi: '+((e&&e.message)||e),'error');
   });
+}
+
+// Tạo bản phát hành "tự đồng bộ": khắc Spreadsheet ID vào chính file HTML, để
+// thí sinh chỉ cần mở file/link là app tự đồng bộ ngay, không cần URL param.
+function downloadSelfSyncFile() {
+  var c = DB.get('config') || {};
+  var id = c.sheetId || DB.get(SYNC_LS_ID) || '';
+  if (!id) { toast('Chưa có Spreadsheet ID.','error'); return; }
+  var html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+  // Thay giá trị của EMBEDDED_SHEET_ID trong mã nguồn bằng ID thật.
+  // Khớp cả trạng thái chưa nhúng (__EMBED_SHEET_ID__) lẫn đã nhúng trước đó.
+  var re = /var EMBEDDED_SHEET_ID = '[^']*';/;
+  var replacement = "var EMBEDDED_SHEET_ID = '" + id.replace(/'/g,"\\'") + "';";
+  if (re.test(html)) {
+    html = html.replace(re, replacement);
+  } else {
+    toast('Không tìm thấy vị trí nhúng ID trong file.','error'); return;
+  }
+  var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = 'thi-truc-tuyen-dong-bo.html'; a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  addLog('SYNC','Tạo bản phát hành tự đồng bộ (đã nhúng Spreadsheet ID)');
+  toast('✅ Đã tạo bản phát hành tự đồng bộ! Gửi file này cho thí sinh — mở là tự đồng bộ.','success');
 }
 
 // Tạo link đồng bộ (kèm Spreadsheet ID) + mã QR để thí sinh quét bằng điện thoại
