@@ -607,6 +607,32 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   </div>
 </div>
 
+<!-- ══ XÁC NHẬN XÓA KẾT QUẢ ══ -->
+<div id="clear-modal" class="mc" style="z-index:10004">
+  <div class="mb" style="max-width:520px">
+    <div class="mh" style="border-bottom:1px solid var(--border)">
+      <h5 style="color:var(--danger)"><i class="fas fa-triangle-exclamation me-2"></i>Xóa toàn bộ kết quả thi</h5>
+      <button onclick="closeM('clear-modal')" style="border:none;background:none;font-size:1.2rem;color:var(--text-muted)"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="mbd" style="padding-top:8px">
+      <p style="margin:0 0 12px">Bạn sắp xóa <strong id="clear-count">0</strong> kết quả. Hành động này <strong style="color:var(--danger)">không thể hoàn tác</strong>.</p>
+      <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 14px;margin-bottom:16px">
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin:0">
+          <input type="checkbox" id="clear-also-sheet" checked style="margin-top:3px;width:18px;height:18px;flex-shrink:0">
+          <span style="font-size:.9rem"><strong>Xóa cả dữ liệu trên Google Sheet.</strong><br><span style="color:var(--text-muted);font-size:.82rem">Nếu KHÔNG chọn, dữ liệu vẫn còn trên Sheet và sẽ tự đồng bộ trở lại phần mềm — việc xóa sẽ vô nghĩa.</span></span>
+        </label>
+      </div>
+      <p style="font-size:.85rem;color:var(--text-muted);margin:0">Gõ <strong>XOA</strong> vào ô dưới để xác nhận:</p>
+      <input class="fc" id="clear-confirm-text" placeholder="Gõ XOA" oninput="onClearConfirmInput()" style="margin-top:6px;text-transform:uppercase" autocomplete="off">
+      <div id="clear-status" style="font-size:.82rem;margin-top:10px"></div>
+    </div>
+    <div class="mf" style="border-top:1px solid var(--border);padding-top:14px">
+      <button class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600" onclick="closeM('clear-modal')"><i class="fas fa-times me-1"></i>Hủy</button>
+      <button id="clear-confirm-btn" class="btn btn-dc" style="border-radius:10px;padding:10px 20px;opacity:.5;pointer-events:none" onclick="doClearResults()"><i class="fas fa-trash me-1"></i>Xóa vĩnh viễn</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ EXAM CONFIG MODAL ══ -->
 <div id="ec-modal" class="mc">
   <div class="mb">
@@ -2693,12 +2719,135 @@ function exportSingleDetailXLSX(id) {
   toast('Đã xuất bài làm của '+r.name+'!','success');
 }
 
+// Mở hộp thoại xác nhận xóa (thay cho confirm() sơ sài)
 function clearResults() {
-  if (!confirm('Xóa toàn bộ kết quả thi?')) return;
-  DB.set('results',[]);
-  RES_FILTER = '';
-  addLog('DATA','Xóa toàn bộ kết quả');
-  pgResults(); toast('Đã xóa kết quả','success');
+  var results = DB.get('results') || [];
+  if (!results.length) { toast('Chưa có kết quả nào để xóa.','info'); return; }
+  var c = DB.get('config') || {};
+  document.getElementById('clear-count').textContent = String(results.length);
+  var txt = document.getElementById('clear-confirm-text'); if (txt) txt.value = '';
+  var st = document.getElementById('clear-status'); if (st) st.innerHTML = '';
+  var btn = document.getElementById('clear-confirm-btn');
+  if (btn) { btn.style.opacity = '.5'; btn.style.pointerEvents = 'none'; }
+  // Bật/tắt tùy chọn xóa trên Sheet tùy theo có kênh ghi hay không
+  var canSheet = !!(c.appsScriptUrl || (c.saJson && c.sheetId));
+  var cb = document.getElementById('clear-also-sheet');
+  if (cb) {
+    cb.checked = canSheet;
+    cb.disabled = !canSheet;
+    var wrap = cb.closest('label');
+    if (wrap && !canSheet) wrap.style.opacity = '.5';
+    else if (wrap) wrap.style.opacity = '1';
+  }
+  document.getElementById('clear-modal').classList.add('show');
+}
+
+function onClearConfirmInput() {
+  var v = (document.getElementById('clear-confirm-text').value || '').trim().toUpperCase();
+  var btn = document.getElementById('clear-confirm-btn');
+  if (!btn) return;
+  var ok = (v === 'XOA' || v === 'XÓA');
+  btn.style.opacity = ok ? '1' : '.5';
+  btn.style.pointerEvents = ok ? 'auto' : 'none';
+}
+
+// Cờ tạm dừng tự-kéo-kết-quả-từ-Sheet (để sau khi xóa không bị đồng bộ lại ngay)
+var _suppressResultPull = false;
+
+function doClearResults() {
+  var v = (document.getElementById('clear-confirm-text').value || '').trim().toUpperCase();
+  if (v !== 'XOA' && v !== 'XÓA') return;
+  var c = DB.get('config') || {};
+  var alsoSheet = document.getElementById('clear-also-sheet');
+  var doSheet = alsoSheet && alsoSheet.checked && !alsoSheet.disabled;
+  var st = document.getElementById('clear-status');
+  var btn = document.getElementById('clear-confirm-btn');
+  if (btn) { btn.style.pointerEvents = 'none'; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Đang xóa...'; }
+
+  function finishLocal(sheetMsg) {
+    // Xóa cục bộ + tạm dừng kéo về (nếu không xóa Sheet, tạm dừng để tránh đồng bộ lại ngay)
+    DB._syncSuppress = true;
+    try { DB.set('results', []); } finally { DB._syncSuppress = false; }
+    RES_FILTER = '';
+    addLog('DATA','Xóa toàn bộ kết quả'+(doSheet?' (kèm Google Sheet)':' (chỉ cục bộ)'));
+    if (!doSheet) {
+      // Không xóa Sheet → chặn tự-kéo-về để việc xóa không bị vô hiệu ngay lập tức
+      _suppressResultPull = true;
+    } else {
+      _suppressResultPull = false;
+    }
+    closeM('clear-modal');
+    if (btn) btn.innerHTML = '<i class="fas fa-trash me-1"></i>Xóa vĩnh viễn';
+    pgResults();
+    toast('Đã xóa kết quả'+(doSheet?' (bao gồm trên Google Sheet)':'')+(sheetMsg||''),'success');
+  }
+
+  if (doSheet) {
+    if (st) st.innerHTML = '<span style="color:var(--primary)"><i class="fas fa-spinner fa-spin me-1"></i>Đang xóa dữ liệu trên Google Sheet...</span>';
+    clearResultsOnSheet(c).then(function(){
+      finishLocal('');
+    }).catch(function(e){
+      if (btn) { btn.style.pointerEvents='auto'; btn.innerHTML='<i class="fas fa-trash me-1"></i>Xóa vĩnh viễn'; }
+      if (st) st.innerHTML = '<span style="color:var(--danger)"><i class="fas fa-times-circle me-1"></i>Không xóa được trên Sheet: '+esc((e&&e.message)||e)+'. Bạn có thể bỏ chọn ô "Xóa trên Google Sheet" để chỉ xóa cục bộ.</span>';
+    });
+  } else {
+    finishLocal(' — lưu ý: dữ liệu vẫn còn trên Google Sheet');
+  }
+}
+
+// Xóa nội dung tab kết quả trên Google Sheet (ưu tiên Apps Script; fallback Service Account)
+function clearResultsOnSheet(c) {
+  c = c || DB.get('config') || {};
+  var summaryTab = c.sheetName || 'KetQua';
+  var detailTab  = c.detailSheetName || 'ChiTiet';
+
+  // Kênh Apps Script
+  if (c.appsScriptUrl) {
+    var payload = {
+      action: 'clear',
+      summaryTab: summaryTab, detailTab: detailTab,
+      summaryHeader: GS_SUMMARY_HEADER, detailHeader: GS_DETAIL_HEADER
+    };
+    return fetch(c.appsScriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    }).then(function(r){
+      return r.text().then(function(txt){
+        var d = null; try { d = JSON.parse(txt); } catch(e){}
+        if (!r.ok || (d && d.ok === false)) throw new Error((d && d.error) || ('HTTP '+r.status));
+        return true;
+      });
+    });
+  }
+
+  // Kênh Service Account (máy admin có khóa)
+  if (c.saJson && c.sheetId) {
+    var sa; try { sa = JSON.parse(c.saJson); } catch(e){ return Promise.reject(new Error('Service Account JSON không hợp lệ')); }
+    return new Promise(function(resolve, reject){
+      getGsAccessToken(sa, function(token, err){
+        if (err || !token) { reject(new Error(err||'Không lấy được token')); return; }
+        // Xóa nội dung 2 tab rồi ghi lại header
+        var base = 'https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(c.sheetId)+'/values/';
+        function clearTab(tab, header){
+          return fetch(base+encodeURIComponent(tab)+'!A1:Z100000:clear', {
+            method:'POST', headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'}, body:'{}'
+          }).then(function(){
+            return fetch(base+encodeURIComponent(tab)+'!A1?valueInputOption=RAW', {
+              method:'PUT', headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+              body: JSON.stringify({ values:[header] })
+            });
+          });
+        }
+        clearTab(summaryTab, GS_SUMMARY_HEADER)
+          .then(function(){ return clearTab(detailTab, GS_DETAIL_HEADER); })
+          .then(function(){ resolve(true); })
+          .catch(function(e){ reject(e); });
+      });
+    });
+  }
+
+  return Promise.reject(new Error('Chưa cấu hình kênh ghi (Apps Script hoặc Service Account)'));
 }
 
 // ── REPORTS ──
@@ -2992,6 +3141,11 @@ var APPS_SCRIPT_CODE =
 '  try{\n' +
 '    var body = JSON.parse(e.postData.contents);\n' +
 '    var ss = SpreadsheetApp.getActiveSpreadsheet();\n' +
+'    if(body.action === "clear"){\n' +
+'      clearTab_(ss, body.summaryTab || "KetQua", body.summaryHeader);\n' +
+'      clearTab_(ss, body.detailTab  || "ChiTiet", body.detailHeader);\n' +
+'      return json_({ok:true, cleared:true});\n' +
+'    }\n' +
 '    writeRows_(ss, body.summaryTab || "KetQua", body.summaryHeader, body.summaryRows);\n' +
 '    writeRows_(ss, body.detailTab  || "ChiTiet", body.detailHeader,  body.detailRows);\n' +
 '    return json_({ok:true});\n' +
@@ -3007,6 +3161,12 @@ var APPS_SCRIPT_CODE =
 '  rng.setNumberFormat("@");            // ep dinh dang van ban de khong bi doi thanh Ngay/So\n' +
 '  var str = rows.map(function(r){ return r.map(function(c){ return c==null?"":String(c); }); });\n' +
 '  rng.setValues(str);\n' +
+'}\n' +
+'function clearTab_(ss, name, header){\n' +
+'  var sh = ss.getSheetByName(name);\n' +
+'  if(!sh) return;\n' +
+'  sh.clearContents();\n' +
+'  if(header && header.length) sh.getRange(1,1,1,header.length).setValues([header]);\n' +
 '}\n' +
 'function json_(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }\n' +
 'function doGet(){ return json_({ok:true, msg:"San sang nhan ket qua"}); }';
@@ -3270,6 +3430,7 @@ function parseVnDateTime(s) {
 // Sheet đã ở chế độ "Bất kỳ ai có liên kết – Người xem". Trả về Promise<count>.
 function pullResultsFromSheet(opts) {
   opts = opts || {};
+  if (_suppressResultPull && !opts.force) return Promise.resolve(0);
   var c = DB.get('config') || {};
   var sheetId = c.sheetId || DB.get(SYNC_LS_ID);
   var tab = c.sheetName || 'KetQua';
@@ -3382,7 +3543,9 @@ function pullResultsFromSheet(opts) {
 
 // Làm mới danh sách kết quả trên trang admin bằng cách kéo từ Sheet rồi render lại
 function refreshResultsFromSheet(showToast) {
-  return pullResultsFromSheet().then(function(added){
+  // Người dùng chủ động tải lại → bỏ trạng thái tạm dừng (nếu trước đó chỉ xóa cục bộ)
+  _suppressResultPull = false;
+  return pullResultsFromSheet({ force: true }).then(function(added){
     if (typeof pgResults === 'function' && S.screen === 'admin') { try { pgResults(); } catch(e){} }
     if (typeof pgMonitor === 'function') { try { if (document.getElementById('mon-body')) pgMonitor(); } catch(e){} }
     if (showToast) {
