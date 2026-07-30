@@ -266,6 +266,14 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 /* Ô đáp án dễ chạm trên mobile */
 @media(max-width:768px){
   .ans-opt,.answer-option,[id^="ans-"] label{min-height:48px}
+  /* Hàng Trước / Danh sách câu / Tiếp: nút giữa thu gọn để đủ chỗ */
+  #btn-qlist{padding:11px 12px}
+  #btn-qlist .qlist-label{display:none}
+  .qcard .btn{padding:11px 14px;font-size:.9rem}
+}
+@media(min-width:769px){
+  /* Trên desktop đã có bảng câu hỏi bên phải nên nút giữa là tùy chọn thêm */
+  #btn-qlist .qlist-label{display:inline}
 }
 </style>
 </head>
@@ -390,8 +398,9 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
         <div class="pg mb-4"><div class="pgb" id="epg" style="width:0%"></div></div>
         <p class="qtext" id="qtxt">Đang tải...</p>
         <div id="ans-container"></div>
-        <div style="display:flex;justify-content:space-between;margin-top:24px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:24px">
           <button onclick="prevQ()" class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600"><i class="fas fa-chevron-left me-1"></i>Trước</button>
+          <button onclick="showReviewPanel()" id="btn-qlist" class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600" title="Xem tiến độ / danh sách câu"><i class="fas fa-th-large me-1"></i><span class="qlist-label">Danh sách câu</span></button>
           <button onclick="nextQ()" id="btn-next" class="btn btn-primary" style="border-radius:10px;font-weight:600;background:var(--primary);border:none">Tiếp <i class="fas fa-chevron-right ms-1"></i></button>
         </div>
       </div>
@@ -417,7 +426,7 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   <div id="review-modal" class="mc" style="z-index:10003">
     <div class="mb" style="max-width:480px;max-height:80vh;display:flex;flex-direction:column">
       <div class="mh" style="flex-shrink:0">
-        <h5><i class="fas fa-list-ol me-2"></i>Xem lại bài thi</h5>
+        <h5><i class="fas fa-th-large me-2"></i>Tiến độ &amp; danh sách câu</h5>
         <button onclick="closeM('review-modal')" style="border:none;background:none;font-size:1.2rem;color:var(--text-muted)"><i class="fas fa-times"></i></button>
       </div>
       <div class="mbd" style="overflow-y:auto;flex:1">
@@ -1166,32 +1175,49 @@ function showReviewPanel() {
     if (S.answers[i] !== undefined) answered.push(i);
     else unanswered.push(i);
   });
+  var pct = qs.length ? Math.round(answered.length / qs.length * 100) : 0;
 
-  var html = '';
+  function cell(i, done) {
+    var isCur = (i === S.qi);
+    var base = 'position:relative;width:44px;height:44px;border-radius:10px;font-weight:700;cursor:pointer;font-size:.95rem;'
+             + 'display:inline-flex;align-items:center;justify-content:center;transition:transform .1s;';
+    var color = done
+      ? 'border:2px solid var(--success);background:#f0fdf4;color:var(--success);'
+      : 'border:2px solid var(--danger);background:#fef2f2;color:var(--danger);';
+    var cur = isCur ? 'box-shadow:0 0 0 3px rgba(37,99,235,.35);border-color:var(--primary);color:var(--primary);' : '';
+    var dot = isCur ? '<span style="position:absolute;top:-5px;right:-5px;width:12px;height:12px;background:var(--primary);border:2px solid #fff;border-radius:50%"></span>' : '';
+    return '<button onclick="jumpToQ(' + i + ')" style="' + base + color + cur + '">' + (i + 1) + dot + '</button>';
+  }
+
+  // Thanh tiến độ + chú thích
+  var html = ''
+    + '<div style="margin-bottom:16px">'
+    +   '<div style="display:flex;justify-content:space-between;font-size:.82rem;color:var(--text-muted);margin-bottom:6px">'
+    +     '<span>Tiến độ làm bài</span><span><strong style="color:var(--primary)">' + answered.length + '</strong>/' + qs.length + ' câu (' + pct + '%)</span>'
+    +   '</div>'
+    +   '<div style="height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:var(--success);transition:width .3s"></div></div>'
+    + '</div>'
+    + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:.78rem;color:var(--text-muted);margin-bottom:14px">'
+    +   '<span><span style="display:inline-block;width:12px;height:12px;border:2px solid var(--success);background:#f0fdf4;border-radius:3px;vertical-align:middle;margin-right:4px"></span>Đã làm</span>'
+    +   '<span><span style="display:inline-block;width:12px;height:12px;border:2px solid var(--danger);background:#fef2f2;border-radius:3px;vertical-align:middle;margin-right:4px"></span>Chưa làm</span>'
+    +   '<span><span style="display:inline-block;width:12px;height:12px;border:2px solid var(--primary);border-radius:3px;vertical-align:middle;margin-right:4px"></span>Đang xem</span>'
+    + '</div>';
+
   if (unanswered.length > 0) {
-    html += '<div style="margin-bottom:14px">'
-          + '<p style="font-weight:700;color:var(--danger);margin-bottom:8px;font-size:.9rem">'
+    html += '<div style="margin-bottom:16px">'
+          + '<p style="font-weight:700;color:var(--danger);margin-bottom:10px;font-size:.9rem">'
           + '<i class="fas fa-exclamation-circle me-1"></i>Chưa trả lời (' + unanswered.length + ' câu)</p>'
           + '<div style="display:flex;flex-wrap:wrap;gap:8px">';
-    unanswered.forEach(function(i) {
-      html += '<button onclick="jumpToQ(' + i + ')" '
-            + 'style="width:40px;height:40px;border-radius:10px;border:2px solid var(--danger);'
-            + 'background:#fef2f2;color:var(--danger);font-weight:700;cursor:pointer;font-size:.9rem">'
-            + (i + 1) + '</button>';
-    });
+    unanswered.forEach(function(i) { html += cell(i, false); });
     html += '</div></div>';
   }
 
-  html += '<div style="margin-bottom:14px">'
-        + '<p style="font-weight:700;color:var(--success);margin-bottom:8px;font-size:.9rem">'
+  html += '<div style="margin-bottom:8px">'
+        + '<p style="font-weight:700;color:var(--success);margin-bottom:10px;font-size:.9rem">'
         + '<i class="fas fa-check-circle me-1"></i>Đã trả lời (' + answered.length + ' câu)</p>'
         + '<div style="display:flex;flex-wrap:wrap;gap:8px">';
-  answered.forEach(function(i) {
-    html += '<button onclick="jumpToQ(' + i + ')" '
-          + 'style="width:40px;height:40px;border-radius:10px;border:2px solid var(--success);'
-          + 'background:#f0fdf4;color:var(--success);font-weight:700;cursor:pointer;font-size:.9rem">'
-          + (i + 1) + '</button>';
-  });
+  if (answered.length) answered.forEach(function(i) { html += cell(i, true); });
+  else html += '<span style="color:var(--text-muted);font-size:.85rem">Chưa có câu nào được trả lời.</span>';
   html += '</div></div>';
 
   document.getElementById('rv-body').innerHTML = html;
