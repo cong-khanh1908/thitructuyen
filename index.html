@@ -2396,6 +2396,9 @@ function saveConfig() {
 
 // ── MONITOR ──
 var _monPullInFlight = false;
+var MON_WINDOW = '1h'; // '1h' | 'today' | 'all'
+function setMonWindow(w){ MON_WINDOW = w; pgMonitor(); }
+
 function pgMonitor() {
   if (!_monPullInFlight) {
     _monPullInFlight = true;
@@ -2405,21 +2408,61 @@ function pgMonitor() {
     }).catch(function(){ _monPullInFlight = false; });
   }
   var results = DB.get('results') || [];
-  var recent = results.filter(function(r) { return Date.now() - new Date(r.time).getTime() < 3600000; });
+
+  function ts(r){ var t = new Date(r.time).getTime(); return isNaN(t) ? 0 : t; }
+  var now = Date.now();
+  var startOfToday = new Date(); startOfToday.setHours(0,0,0,0);
+
+  var win = MON_WINDOW;
+  var list;
+  if (win === '1h')      list = results.filter(function(r){ return ts(r) > 0 && now - ts(r) < 3600000; });
+  else if (win === 'today') list = results.filter(function(r){ return ts(r) >= startOfToday.getTime(); });
+  else                   list = results.slice();
+
+  // Nếu cửa sổ "1 giờ" trống nhưng vẫn có kết quả, tự chuyển sang hiển thị gần đây
+  // để admin không thấy bảng trống một cách khó hiểu.
+  var autoNote = '';
+  if (win === '1h' && !list.length && results.length) {
+    list = results.slice();
+    autoNote = ' (không có bài trong 1 giờ qua — đang hiển thị tất cả)';
+  }
+
+  // sắp xếp mới nhất trước
+  list = list.slice().sort(function(a,b){ return ts(b) - ts(a); });
+
+  function timeCell(r){
+    if (r.timeText) return esc(r.timeText);
+    var d = new Date(r.time);
+    return isNaN(d.getTime()) ? '—' : d.toLocaleString('vi-VN');
+  }
+
   var rowsHtml = '';
-  if (recent.length) {
-    recent.slice().reverse().forEach(function(r) {
+  if (list.length) {
+    list.forEach(function(r) {
       var sc = r.score>=70?'var(--success)':'var(--danger)';
-      var vi = r.violations>0 ? '<span style="color:var(--danger);font-weight:700">⚠️ '+r.violations+'</span>' : '✓';
-      rowsHtml += '<tr><td><strong>'+esc(r.name)+'</strong></td><td>'+esc(r.unit)+'</td><td><code>'+r.examCode+'</code></td><td><strong style="color:'+sc+'">'+r.score+'%</strong></td><td>'+vi+'</td><td style="color:var(--text-muted);font-size:.82rem">'+new Date(r.time).toLocaleTimeString('vi-VN')+'</td></tr>';
+      var vi = r.violations>0 ? '<span style="color:var(--danger);font-weight:700">⚠️ '+r.violations+'</span>' : '<span style="color:var(--success)">✓</span>';
+      rowsHtml += '<tr><td><strong>'+esc(r.name)+'</strong></td><td>'+esc(r.unit)+'</td><td><code>'+esc(r.examCode)+'</code></td><td><strong style="color:'+sc+'">'+r.score+'%</strong></td><td>'+r.correct+'/'+r.totalQ+'</td><td>'+vi+'</td><td style="color:var(--text-muted);font-size:.82rem">'+timeCell(r)+'</td></tr>';
     });
   } else {
-    rowsHtml = '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text-muted)">Không có hoạt động trong 1 giờ qua</td></tr>';
+    rowsHtml = '<tr><td colspan="7" style="text-align:center;padding:32px;color:var(--text-muted)">Chưa có bài thi nào</td></tr>';
   }
+
+  function btn(w, label){
+    var on = (MON_WINDOW === w);
+    return '<button onclick="setMonWindow(\''+w+'\')" class="btn btn-sm '+(on?'btn-primary':'btn-outline-secondary')+'" style="border-radius:8px;font-weight:600'+(on?';background:var(--primary);border:none':'')+'">'+label+'</button>';
+  }
+
   document.getElementById('apc').innerHTML =
-    '<div class="ss"><h6><i class="fas fa-circle" style="color:#22c55e;font-size:.6rem"></i> Giám sát trực tiếp</h6>' +
-    '<p style="color:var(--text-muted);margin-bottom:20px">'+recent.length+' bài thi trong 1 giờ qua</p>' +
-    '<div class="table-responsive"><table class="table tc"><thead><tr><th>Thí sinh</th><th>Đơn vị</th><th>Mã đề</th><th>Điểm</th><th>Vi phạm</th><th>Thời gian</th></tr></thead>' +
+    '<div class="ss">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:8px">' +
+      '<h6 style="margin:0"><i class="fas fa-circle" style="color:#22c55e;font-size:.6rem"></i> Giám sát trực tiếp</h6>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
+        btn('1h','1 giờ qua') + btn('today','Hôm nay') + btn('all','Tất cả') +
+        '<button onclick="refreshResultsFromSheet(true)" class="btn btn-sm btn-acc" style="border-radius:8px;padding:6px 12px"><i class="fas fa-sync-alt me-1"></i>Làm mới</button>' +
+      '</div>' +
+    '</div>' +
+    '<p style="color:var(--text-muted);margin-bottom:16px">'+list.length+' bài thi'+esc(autoNote)+' · tự làm mới mỗi 20 giây</p>' +
+    '<div class="table-responsive"><table class="table tc"><thead><tr><th>Thí sinh</th><th>Đơn vị</th><th>Mã đề</th><th>Điểm</th><th>Đúng/Tổng</th><th>Vi phạm</th><th>Thời gian nộp</th></tr></thead>' +
     '<tbody>'+rowsHtml+'</tbody></table></div></div>';
 }
 
@@ -2455,15 +2498,17 @@ function pgResults() {
       var sc = r.score>=70?'var(--success)':'var(--danger)';
       var vi = r.violations>0?'<span style="color:var(--danger);font-weight:700">'+r.violations+'</span>':'<span style="color:var(--success)">0</span>';
       var hasDetail = r.details && r.details.length;
+      var submitDisp = r.timeText ? esc(r.timeText) : (function(){ var d=new Date(r.time); return isNaN(d.getTime())?'—':d.toLocaleString('vi-VN'); })();
+      var idAttr = String(r.id).replace(/'/g,"\\'");
       rowsHtml += '<tr>';
-      rowsHtml += '<td><strong>'+esc(r.name)+'</strong></td><td>'+r.dob+'</td><td>'+esc(r.unit)+'</td><td>'+esc(r.phone)+'</td>';
-      rowsHtml += '<td><code style="background:#f1f5f9;padding:2px 8px;border-radius:6px;font-size:.8rem">'+r.examCode+'</code></td>';
+      rowsHtml += '<td><strong>'+esc(r.name)+'</strong></td><td>'+esc(r.dob)+'</td><td>'+esc(r.unit)+'</td><td>'+esc(r.phone)+'</td>';
+      rowsHtml += '<td><code style="background:#f1f5f9;padding:2px 8px;border-radius:6px;font-size:.8rem">'+esc(r.examCode)+'</code></td>';
       rowsHtml += '<td><strong style="color:'+sc+'">'+r.score+'%</strong></td>';
-      rowsHtml += '<td>'+r.correct+'/'+r.totalQ+'</td><td>'+r.timeUsed+'</td><td>'+vi+'</td>';
-      rowsHtml += '<td style="font-size:.8rem;color:var(--text-muted)">'+new Date(r.time).toLocaleString('vi-VN')+'</td>';
+      rowsHtml += '<td>'+r.correct+'/'+r.totalQ+'</td><td>'+esc(r.timeUsed||'')+'</td><td>'+vi+'</td>';
+      rowsHtml += '<td style="font-size:.8rem;color:var(--text-muted)">'+submitDisp+'</td>';
       rowsHtml += '<td style="text-align:center">' +
         (hasDetail
-          ? '<button class="btn btn-sm" style="background:var(--primary);color:#fff;border-radius:8px;font-weight:600;padding:4px 12px" onclick="viewResultDetail('+r.id+')"><i class="fas fa-eye me-1"></i>Chi tiết</button>'
+          ? '<button class="btn btn-sm" style="background:var(--primary);color:#fff;border-radius:8px;font-weight:600;padding:4px 12px" onclick="viewResultDetail(\''+idAttr+'\')"><i class="fas fa-eye me-1"></i>Chi tiết</button>'
           : '<span style="font-size:.75rem;color:var(--text-muted)">Không có</span>') +
         '</td>';
       rowsHtml += '</tr>';
@@ -2503,7 +2548,7 @@ function onResSearch(v) {
 // ── XEM CHI TIẾT BÀI LÀM CỦA 1 THÍ SINH ──
 function viewResultDetail(id) {
   var results = DB.get('results') || [];
-  var r = results.filter(function(x){ return x.id === id; })[0];
+  var r = results.filter(function(x){ return String(x.id) === String(id); })[0];
   if (!r) { toast('Không tìm thấy kết quả!','error'); return; }
   if (!r.details || !r.details.length) {
     if (r.fromSheet) toast('Bài làm này được tải từ Google Sheet nên không có chi tiết từng câu tại đây. Xem tab "'+((DB.get('config')||{}).detailSheetName||'ChiTiet')+'" trong Google Sheet để có chi tiết đầy đủ.','info');
@@ -2634,7 +2679,7 @@ function exportDetailXLSX() {
 // ── XUẤT CHI TIẾT 1 THÍ SINH ──
 function exportSingleDetailXLSX(id) {
   var results = DB.get('results') || [];
-  var r = results.filter(function(x){ return x.id === id; })[0];
+  var r = results.filter(function(x){ return String(x.id) === String(id); })[0];
   if (!r || !r.details || !r.details.length) { toast('Không có dữ liệu chi tiết!','error'); return; }
 
   var data = [DETAIL_HEADER].concat(buildDetailRows(r));
@@ -2957,7 +3002,11 @@ var APPS_SCRIPT_CODE =
 '  var sh = ss.getSheetByName(name);\n' +
 '  if(!sh){ sh = ss.insertSheet(name); if(header) sh.appendRow(header); }\n' +
 '  else if(sh.getLastRow()===0 && header){ sh.appendRow(header); }\n' +
-'  sh.getRange(sh.getLastRow()+1, 1, rows.length, rows[0].length).setValues(rows);\n' +
+'  var startRow = sh.getLastRow()+1;\n' +
+'  var rng = sh.getRange(startRow, 1, rows.length, rows[0].length);\n' +
+'  rng.setNumberFormat("@");            // ep dinh dang van ban de khong bi doi thanh Ngay/So\n' +
+'  var str = rows.map(function(r){ return r.map(function(c){ return c==null?"":String(c); }); });\n' +
+'  rng.setValues(str);\n' +
 '}\n' +
 'function json_(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }\n' +
 'function doGet(){ return json_({ok:true, msg:"San sang nhan ket qua"}); }';
@@ -3199,6 +3248,23 @@ function gsDetailRows(result) {
   return rows;
 }
 
+// Phân tích chuỗi ngày-giờ kiểu Việt Nam: "HH:MM:SS d/m/yyyy" hoặc
+// "d/m/yyyy HH:MM:SS" hoặc "d/m/yyyy". Trả về Date hoặc null.
+function parseVnDateTime(s) {
+  if (!s) return null;
+  s = String(s).trim();
+  var timePart = '', datePart = s;
+  var mm = s.match(/(\d{1,2}:\d{2}(?::\d{2})?)/);
+  if (mm) { timePart = mm[1]; datePart = s.replace(mm[1], '').trim(); }
+  var dm = datePart.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if (!dm) return null;
+  var d = +dm[1], mo = +dm[2] - 1, y = +dm[3]; if (y < 100) y += 2000;
+  var hh = 0, mi = 0, ss = 0;
+  if (timePart) { var tp = timePart.split(':'); hh = +tp[0]||0; mi = +tp[1]||0; ss = +tp[2]||0; }
+  var dt = new Date(y, mo, d, hh, mi, ss);
+  return isNaN(dt.getTime()) ? null : dt;
+}
+
 // ── Đọc kết quả (tổng hợp) từ Google Sheet về cho admin xem ──────────────────
 // Dùng đường công khai (GViz) nên admin không cần thao tác gì thêm ngoài việc
 // Sheet đã ở chế độ "Bất kỳ ai có liên kết – Người xem". Trả về Promise<count>.
@@ -3218,23 +3284,74 @@ function pullResultsFromSheet(opts) {
     var rows = (obj.table && obj.table.rows) || [];
     // Mỗi hàng: [Thời gian nộp, Họ tên, Ngày sinh, Đơn vị, SĐT, Mã đề, Đúng/Tổng, Điểm, TG làm, Vi phạm]
     var fetched = [];
+    // Chuyển giá trị ô GViz thành chuỗi hiển thị đúng. GViz trả ô Ngày/Giờ dưới
+    // dạng cell.v = "Date(2026,6,30,14,14,25)" (tháng 0-based), còn cell.f là
+    // chuỗi đã format đẹp. Ta ưu tiên cell.f; nếu không có thì tự dựng từ Date().
+    function cellStr(cell) {
+      if (!cell) return '';
+      if (cell.f != null && String(cell.f).trim() !== '') return String(cell.f);
+      if (cell.v == null) return '';
+      return String(cell.v);
+    }
+    // Nếu ô là "Date(y,m,d,H,M,S)" (m 0-based) → Date thật; nếu là chuỗi
+    // "HH:MM:SS d/m/yyyy" do app tự ghi → cũng parse được. Trả về Date|null.
+    function cellToDate(cell) {
+      if (!cell) return null;
+      var v = cell.v;
+      if (typeof v === 'string') {
+        var m = v.match(/^Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)$/);
+        if (m) {
+          return new Date(+m[1], +m[2], +m[3], +(m[4]||0), +(m[5]||0), +(m[6]||0));
+        }
+      }
+      // thử từ chuỗi hiển thị "HH:MM:SS d/m/yyyy" hoặc "d/m/yyyy HH:MM:SS"
+      var f = cellStr(cell);
+      var dt = parseVnDateTime(f);
+      return dt;
+    }
+
+    // Chuẩn hóa một ô có thể là "Date(...)" thành chuỗi hiển thị hợp lý
+    function niceCell(cell, kind) {
+      var raw = cellStr(cell);
+      // nếu .f đã đẹp và không phải "Date(" thì dùng luôn
+      if (raw && raw.indexOf('Date(') !== 0) return raw;
+      var d = cellToDate(cell);
+      if (!d) return raw;
+      if (kind === 'date') return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear();
+      if (kind === 'time') { // TG làm lưu kiểu m:ss → GViz có thể coi là giờ:phút
+        return d.getHours()+':'+('0'+d.getMinutes()).slice(-2);
+      }
+      return raw;
+    }
+
     rows.forEach(function(row){
       var c0 = (row && row.c) || [];
-      function val(i){ return c0[i] && c0[i].v != null ? String(c0[i].v) : (c0[i] && c0[i].f != null ? String(c0[i].f) : ''); }
+      function val(i){ return cellStr(c0[i]); }
       var name = val(1);
       if (!name || name.indexOf('[GỬI THỬ]') > -1) return; // bỏ dòng test
       var correctTotal = val(6).split('/');
-      var scoreStr = val(7).replace('%','').trim();
+      // Điểm: có thể là "45%", "0.45" (bị Sheets đổi thành phần trăm), hoặc "45"
+      var scoreStr = val(7).replace('%','').trim().replace(',', '.');
+      var scoreNum = parseFloat(scoreStr);
+      if (!isNaN(scoreNum) && scoreNum > 0 && scoreNum <= 1 && val(7).indexOf('%') === -1) scoreNum = scoreNum * 100;
+      // Thời gian nộp: dựng Date thật để lọc "1 giờ qua"; đồng thời giữ chuỗi hiển thị
+      var submitDate = cellToDate(c0[0]);
+      var timeISO = submitDate ? submitDate.toISOString() : val(0);
+      var timeDisp = niceCell(c0[0], 'datetime');
+      if (timeDisp.indexOf('Date(') === 0 && submitDate) {
+        timeDisp = submitDate.toLocaleString('vi-VN');
+      }
+
       fetched.push({
-        // id tổng hợp ổn định để chống trùng: thời gian + tên + mã đề
-        id: 'sheet:' + val(0) + '|' + name + '|' + val(5),
-        time: val(0),
-        name: name, dob: val(2), unit: val(3), phone: val(4),
+        id: 'sheet:' + timeDisp + '|' + name + '|' + val(5),
+        time: timeISO,          // ISO chuẩn để new Date() luôn hợp lệ
+        timeText: timeDisp,     // chuỗi hiển thị gốc từ Sheet
+        name: name, dob: niceCell(c0[2], 'date'), unit: val(3), phone: val(4),
         examCode: val(5),
         correct: parseInt(correctTotal[0], 10) || 0,
         totalQ: parseInt(correctTotal[1], 10) || 0,
-        score: parseFloat(scoreStr) || 0,
-        timeUsed: val(8),
+        score: isNaN(scoreNum) ? 0 : Math.round(scoreNum * 100) / 100,
+        timeUsed: niceCell(c0[8], 'time'),
         violations: parseInt(val(9), 10) || 0,
         details: [],
         fromSheet: true,
