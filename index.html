@@ -219,10 +219,47 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   .screen-centered{align-items:flex-start}
   .login-card,.exam-portal-card,.result-card{margin-top:16px;margin-bottom:16px}
 }
+/* ── HUY HIỆU ĐỒNG BỘ ── */
+.sync-badge{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom));
+  z-index:10050;display:flex;align-items:center;gap:9px;background:white;border-radius:999px;
+  padding:10px 18px;box-shadow:0 8px 28px rgba(0,0,0,.18);font-size:.82rem;font-weight:600;
+  border:1px solid var(--border);max-width:90vw;animation:si .3s ease}
+.sync-badge.loading{color:var(--primary);border-color:#c7d2fe;background:#eef2ff}
+.sync-badge.ok{color:var(--success);border-color:#bbf7d0;background:#f0fdf4}
+.sync-badge span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* ── KHỐI ĐỒNG BỘ TRONG CÀI ĐẶT ── */
+.sync-info{background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:14px 16px;font-size:.85rem}
+.sync-info code{background:#eef2ff;padding:2px 6px;border-radius:6px;font-size:.8rem;word-break:break-all}
+.sync-status-pill{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;font-weight:600;
+  padding:4px 12px;border-radius:999px}
+.sync-status-pill.on{background:#f0fdf4;color:var(--success)}
+.sync-status-pill.off{background:#fef2f2;color:var(--danger)}
+/* ── CẢI THIỆN THÍCH ỨNG DI ĐỘNG CHO PHẦN THI ── */
+@media(max-width:768px){
+  .sync-badge{font-size:.78rem;padding:9px 15px}
+  .exam-hdr{flex-wrap:wrap;gap:10px;padding:12px 14px;padding-top:calc(12px + env(safe-area-inset-top))}
+  .exam-hdr .ei h4{font-size:1rem}
+  .exam-body{padding:14px}
+  #submit-fab{bottom:calc(16px + env(safe-area-inset-bottom))}
+}
+@media(max-width:480px){
+  .exam-hdr h4{font-size:.95rem}
+  .qcard .qtext{font-size:1rem;line-height:1.55}
+  .timer-d{padding:6px 10px}
+  .timer-d .tv{font-size:1.15rem}
+  /* nút Trước/Tiếp to hơn, dễ chạm */
+  .qcard .btn{padding:11px 16px;font-size:.92rem}
+  .ss{padding:18px 14px}
+}
+/* Ô đáp án dễ chạm trên mobile */
+@media(max-width:768px){
+  .ans-opt,.answer-option,[id^="ans-"] label{min-height:48px}
+}
 </style>
 </head>
 <body>
 <div id="tc" class="toast-c"></div>
+<div id="sync-badge" class="sync-badge" style="display:none"></div>
 
 <!-- ══ LOGIN / TRANG VÀO THI ══ -->
 <div id="screen-login" class="screen screen-centered active">
@@ -236,6 +273,8 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <div style="text-align:center">
       <p style="color:var(--text-muted);margin-bottom:24px">Tham gia kỳ thi không cần tài khoản</p>
       <button class="btn-primary-custom" onclick="showScreen('exam-portal')"><i class="fas fa-play-circle me-2"></i>Vào Phòng Thi</button>
+      <button class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600;margin-top:12px;width:100%" onclick="manualSync()"><i class="fas fa-sync-alt me-2"></i>Đồng bộ cấu hình</button>
+      <p style="margin-top:10px;font-size:.75rem;color:var(--text-muted)"><i class="fas fa-mobile-alt me-1"></i>Trên điện thoại, nhấn <strong>Đồng bộ cấu hình</strong> để nhận cài đặt mới nhất từ Ban tổ chức.</p>
     </div>
     <p style="text-align:center;margin-top:20px;font-size:.8rem;color:var(--text-muted)">© 2026 Hệ Thống Thi Trực Tuyến</p>
   </div>
@@ -582,7 +621,19 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 // ─── DB ───────────────────────────────────────────────
 const DB = {
   get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch(e) { return null; } },
-  set(k, v) { localStorage.setItem(k, JSON.stringify(v)); }
+  set(k, v) {
+    localStorage.setItem(k, JSON.stringify(v));
+    // Khi bất kỳ dữ liệu nào thuộc nhóm đồng bộ thay đổi (do admin thao tác) →
+    // tự động lên lịch đẩy lên đám mây. Cờ _syncSuppress dùng để tránh vòng lặp
+    // khi chính quá trình nạp cấu hình từ đám mây gọi DB.set.
+    try {
+      if (!DB._syncSuppress && typeof autoPushCloud === 'function'
+          && ['config','questions','examsets','topics','topicsMeta','units'].indexOf(k) !== -1) {
+        autoPushCloud();
+      }
+    } catch(e){}
+  },
+  _syncSuppress: false
 };
 
 // ─── STATE ────────────────────────────────────────────
@@ -604,6 +655,7 @@ let S = {
 
 // ─── INIT DATA ────────────────────────────────────────
 function initData() {
+  DB._syncSuppress = true; // gieo dữ liệu mẫu lần đầu – không đẩy lên đám mây
   if (!DB.get('questions')) DB.set('questions', makeSampleQs());
   if (!DB.get('results'))   DB.set('results', []);
   if (!DB.get('examsets'))  DB.set('examsets', []);
@@ -628,6 +680,7 @@ function initData() {
       adminUser: 'admin', adminPass: 'admin'
     });
   }
+  DB._syncSuppress = false;
 }
 
 function makeSampleQs() {
@@ -2227,6 +2280,7 @@ function saveConfig() {
   DB.set('config', c);
   addLog('CONFIG','Cập nhật cấu hình kỳ thi: '+c.examTitle+', '+c.timeLimit+' phút, vi phạm='+c.violAction);
   toast('Đã lưu cấu hình!','success');
+  autoPushCloud();
 }
 
 // ── MONITOR ──
@@ -2557,6 +2611,31 @@ function pgSettings() {
         '<span id="gs-last-sync" style="font-size:.78rem;color:var(--text-muted)">'+(c.gsLastSync?'Đồng bộ cuối: '+new Date(c.gsLastSync).toLocaleString('vi-VN'):'')+'</span>' +
       '</div>' +
     '</div></div>' +
+    // ── ĐỒNG BỘ ĐA THIẾT BỊ (mobile tự nhận cấu hình) ──
+    '<div class="ss" id="sync-section"><h6><i class="fas fa-mobile-alt me-2"></i>Đồng bộ cấu hình đa thiết bị (PC ⇄ Mobile)</h6>' +
+    '<p style="color:var(--text-muted);font-size:.85rem;margin-top:-8px;margin-bottom:14px">Toàn bộ <strong>cấu hình kỳ thi, ngân hàng câu hỏi, đề thi, chủ đề và danh mục đơn vị</strong> sẽ được lưu lên chính Google Sheet ở trên (tab <code>'+SYNC_TAB+'</code>). Khi thí sinh mở phần mềm trên điện thoại, ứng dụng <strong>tự động tải cấu hình mới nhất</strong> về để sử dụng — không cần thao tác thủ công.</p>' +
+    '<div class="sync-info" style="margin-bottom:14px">' +
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">' +
+        '<span class="sync-status-pill '+((c.saJson&&c.sheetId)?'on':'off')+'">'+
+          ((c.saJson&&c.sheetId)?'<i class="fas fa-check-circle"></i> Sẵn sàng đồng bộ':'<i class="fas fa-exclamation-triangle"></i> Chưa đủ điều kiện')+'</span>' +
+        (c.cfgLastPush?'<span style="font-size:.78rem;color:var(--text-muted)">Đẩy lần cuối: '+new Date(c.cfgLastPush).toLocaleString('vi-VN')+'</span>':'') +
+      '</div>' +
+      '<p style="margin:0 0 6px"><strong>Bước để mobile nhận được cấu hình:</strong></p>' +
+      '<ol style="margin:0;padding-left:20px;line-height:1.7">' +
+        '<li>Bấm <strong>“Đẩy cấu hình lên máy chủ”</strong> bên dưới sau mỗi lần chỉnh sửa (hệ thống cũng tự đẩy khi bạn Lưu).</li>' +
+        '<li>Mở Google Sheet → <strong>Chia sẻ</strong> → chọn <em>“Bất kỳ ai có đường liên kết – Người xem”</em> (để điện thoại đọc được mà không cần đăng nhập).</li>' +
+        '<li>Gửi <strong>Mã bảng tính (Spreadsheet ID)</strong> cho thí sinh, hoặc dùng chung đường link/QR có sẵn ID.</li>' +
+      '</ol>' +
+      (c.sheetId?'<p style="margin:10px 0 0"><strong>Spreadsheet ID:</strong> <code>'+esc(c.sheetId)+'</code> <button onclick="copySheetId()" style="border:none;background:#eef2ff;border-radius:6px;padding:3px 9px;font-size:.75rem;color:var(--primary);cursor:pointer;font-weight:600;margin-left:4px"><i class="fas fa-copy me-1"></i>Sao chép</button></p>':'') +
+    '</div>' +
+    '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">' +
+      '<button onclick="pushConfigManual()" class="btn btn-acc" style="border-radius:10px;padding:9px 18px" id="btn-cfgpush"><i class="fas fa-cloud-upload-alt me-1"></i>Đẩy cấu hình lên máy chủ</button>' +
+      '<button onclick="pullConfigManual()" class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600" id="btn-cfgpull"><i class="fas fa-cloud-download-alt me-1"></i>Tải lại cấu hình từ máy chủ</button>' +
+      (c.sheetId?'<button onclick="showSyncLink()" class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600"><i class="fas fa-qrcode me-1"></i>Tạo link/QR đồng bộ cho thí sinh</button>':'') +
+      '<span id="cfg-sync-status" style="font-size:.8rem;color:var(--text-muted)"></span>' +
+    '</div>' +
+    '<div id="sync-link-box" style="display:none;margin-top:14px"></div>' +
+    '</div>' +
     '<div class="ss"><h6><i class="fas fa-database me-2"></i>Sao lưu & Khôi phục</h6>' +
     '<div style="display:flex;gap:12px;flex-wrap:wrap">' +
       '<button onclick="backupData()" class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600"><i class="fas fa-download me-1"></i>Sao lưu</button>' +
@@ -2574,6 +2653,7 @@ function saveUnits() {
   DB.set('units', clean);
   addLog('SETTINGS','Cập nhật danh mục Khoa/Phòng ('+clean.length+' đơn vị)');
   toast('Đã lưu danh mục Khoa/Phòng!','success');
+  autoPushCloud();
   pgSettings();
 }
 
@@ -2588,6 +2668,7 @@ function saveAdminAccount() {
   addLog('SETTINGS','Cập nhật tài khoản quản trị');
   document.getElementById('st-ap').value = '';
   toast('Đã lưu tài khoản quản trị!','success');
+  autoPushCloud();
 }
 
 function saveSettings() {
@@ -2602,6 +2683,7 @@ function saveSettings() {
   DB.set('config', c);
   addLog('SETTINGS','Cập nhật cài đặt hệ thống');
   toast('Đã lưu cài đặt!','success');
+  autoPushCloud();
 }
 
 // ── GOOGLE SHEETS helpers ──────────────────────────────────────────────────
@@ -3060,6 +3142,7 @@ function restoreData() {
         if(d.topicsMeta) DB.set('topicsMeta',d.topicsMeta);
         toast('Khôi phục thành công!','success');
         addLog('RESTORE','Khôi phục dữ liệu từ backup');
+        autoPushCloud();
       } catch(e2) { toast('File không hợp lệ!','error'); }
     };
     r.readAsText(f);
@@ -3121,10 +3204,407 @@ document.addEventListener('keydown', function(e) {
   if (e.key === 'Enter' && document.getElementById('admin-login-modal').classList.contains('show')) adminLogin();
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ĐỒNG BỘ CẤU HÌNH + CSDL QUA GOOGLE SHEETS  (để mobile tự nhận cấu hình admin)
+// ═══════════════════════════════════════════════════════════════════════════
+// Ý tưởng: toàn bộ cấu hình + ngân hàng đề của admin được ĐẨY lên 1 tab riêng
+// ("_HeThong") trong chính Spreadsheet đã cấu hình, dưới dạng JSON (chia nhỏ theo
+// ô để tránh giới hạn 50k ký tự/ô). Khi mở app trên BẤT KỲ thiết bị nào (đặc biệt
+// là điện thoại), app sẽ TỰ ĐỘNG đọc lại tab đó và nạp vào localStorage → dùng ngay.
+//
+// Mobile đọc được KHÔNG cần đăng nhập admin nhờ 2 con đường (ưu tiên theo thứ tự):
+//   1) Nếu thiết bị đã có Service Account (đã đồng bộ 1 lần) → đọc qua JWT.
+//   2) Nếu Google Sheet được chia sẻ "Bất kỳ ai có liên kết – Người xem" → đọc
+//      công khai qua GViz (không cần khóa, không cần đăng nhập).
+// Chỉ cần Spreadsheet ID là đủ để mobile kéo cấu hình về.
+
+var SYNC_TAB = '_HeThong';          // tab lưu cấu hình (ẩn khỏi người dùng thường)
+var SYNC_CHUNK = 45000;             // số ký tự tối đa mỗi ô (giới hạn Sheets ~50k)
+var SYNC_KEYS = ['config','questions','examsets','topics','topicsMeta','units'];
+var SYNC_LS_ID = 'syncSheetId';     // nơi lưu Spreadsheet ID riêng cho việc đọc cấu hình
+
+// Gói toàn bộ CSDL (trừ kết quả & log – những thứ mang tính cục bộ/riêng tư).
+// LƯU Ý BẢO MẬT: không đưa Service Account (private key) và mật khẩu admin lên
+// Sheet, vì Sheet có thể được chia sẻ công khai để mobile đọc. Thí sinh không cần
+// hai thứ này để làm bài.
+var SYNC_SENSITIVE = ['saJson','saEmail','adminPass'];
+function buildSyncPayload() {
+  var payload = { _v: 2, _ts: new Date().toISOString() };
+  SYNC_KEYS.forEach(function(k){
+    var val = DB.get(k);
+    if (k === 'config' && val && typeof val === 'object') {
+      var clone = {};
+      Object.keys(val).forEach(function(f){ if (SYNC_SENSITIVE.indexOf(f) === -1) clone[f] = val[f]; });
+      val = clone;
+    }
+    payload[k] = val;
+  });
+  return payload;
+}
+
+// Ghi đè giá trị vào 1 dải ô (dùng cho tab cấu hình)
+function gsUpdateValues(sheetId, token, rangeA1, values) {
+  return fetch('https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(sheetId)+
+        '/values/'+encodeURIComponent(rangeA1)+'?valueInputOption=RAW', {
+    method: 'PUT',
+    headers: {'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+    body: JSON.stringify({ values: values })
+  }).then(function(r){
+    return r.json().then(function(d){
+      if (r.status !== 200) throw new Error((d.error && d.error.message) || ('HTTP '+r.status));
+      return d;
+    });
+  });
+}
+
+// Xóa sạch nội dung 1 tab (trước khi ghi mới)
+function gsClearTab(sheetId, token, tabName) {
+  return fetch('https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(sheetId)+
+        '/values/'+encodeURIComponent(tabName)+'!A1:B999:clear', {
+    method: 'POST',
+    headers: {'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+    body: '{}'
+  }).then(function(r){ return r.json(); });
+}
+
+// Tự động đẩy cấu hình lên đám mây sau khi admin thay đổi (gộp nhiều thay đổi
+// trong 1.2s để tránh gọi API liên tục). Chỉ chạy khi đã cấu hình Sheet + SA.
+var _pushTimer = null;
+function autoPushCloud() {
+  var c = DB.get('config') || {};
+  if (!c.saJson || !c.sheetId) return; // chưa đủ điều kiện đồng bộ – bỏ qua im lặng
+  if (_pushTimer) clearTimeout(_pushTimer);
+  _pushTimer = setTimeout(function(){
+    pushConfigToCloud({ onDone: function(ok, msg){
+      if (ok) { showSyncBadge('ok','Đã lưu cấu hình lên máy chủ'); }
+      else { console.warn('[SYNC] push lỗi:', msg); }
+    }});
+  }, 1200);
+}
+
+// ── ĐẨY cấu hình lên đám mây (gọi khi admin lưu cài đặt / cấu hình) ──────────
+function pushConfigToCloud(opts) {
+  opts = opts || {};
+  var done = opts.onDone || function(){};
+  var c = DB.get('config') || {};
+  if (!c.saJson || !c.sheetId) { done(false, 'Chưa cấu hình Service Account & Spreadsheet ID'); return; }
+  var sa = null;
+  try { sa = JSON.parse(c.saJson); } catch(e) { done(false, 'Service Account JSON không hợp lệ'); return; }
+
+  var jsonStr = JSON.stringify(buildSyncPayload());
+  // Chia JSON thành các mảnh <= SYNC_CHUNK, mỗi mảnh 1 dòng ở cột B; cột A là chỉ số
+  var chunks = [];
+  for (var i = 0; i < jsonStr.length; i += SYNC_CHUNK) chunks.push(jsonStr.slice(i, i + SYNC_CHUNK));
+  // Dòng 1: meta ; các dòng tiếp: từng mảnh
+  var values = [['__META__', JSON.stringify({ v:2, parts:chunks.length, ts:new Date().toISOString(), len:jsonStr.length })]];
+  chunks.forEach(function(ch, idx){ values.push(['part'+idx, ch]); });
+
+  getGsAccessToken(sa, function(token, err){
+    if (err) { done(false, err); return; }
+    gsFetchTabs(c.sheetId, token).then(function(existing){
+      return gsEnsureTabs(c.sheetId, token, [SYNC_TAB], existing);
+    }).then(function(){
+      return gsClearTab(c.sheetId, token, SYNC_TAB);
+    }).then(function(){
+      return gsUpdateValues(c.sheetId, token, SYNC_TAB+'!A1', values);
+    }).then(function(){
+      var cv = DB.get('config')||{}; cv.cfgLastPush = new Date().toISOString(); DB.set('config', cv);
+      // Lưu Spreadsheet ID để lần sau (kể cả mobile) tự biết đọc từ đâu
+      DB.set(SYNC_LS_ID, c.sheetId);
+      addLog('SYNC','Đẩy cấu hình & ngân hàng đề lên đám mây ('+chunks.length+' phần, '+jsonStr.length+' ký tự)');
+      done(true, 'OK');
+    }).catch(function(e){
+      done(false, (e && e.message) ? e.message : String(e));
+    });
+  });
+}
+
+// ── ĐỌC cấu hình từ đám mây (mobile / thiết bị mới gọi khi mở app) ───────────
+// Trả về Promise<payloadObject|null>. Thử JWT trước (nếu có SA), rồi GViz công khai.
+function fetchCloudConfig(sheetId) {
+  sheetId = sheetId || (DB.get('config')||{}).sheetId || DB.get(SYNC_LS_ID);
+  if (!sheetId) return Promise.resolve(null);
+  var c = DB.get('config') || {};
+
+  function assemble(rows) {
+    // rows: mảng [ [colA,colB], ... ] theo thứ tự dòng
+    if (!rows || !rows.length) return null;
+    var meta = null, parts = [];
+    rows.forEach(function(r){
+      var a = r[0]||'', b = r[1]||'';
+      if (a === '__META__') { try { meta = JSON.parse(b); } catch(e){} }
+      else if (/^part\d+$/.test(a)) parts[parseInt(a.slice(4),10)] = b;
+    });
+    var joined = parts.join('');
+    if (!joined) return null;
+    try { return JSON.parse(joined); } catch(e){ return null; }
+  }
+
+  // (1) thử qua Service Account nếu thiết bị có
+  var tryJwt = function() {
+    if (!c.saJson) return Promise.resolve(null);
+    var sa; try { sa = JSON.parse(c.saJson); } catch(e){ return Promise.resolve(null); }
+    return new Promise(function(res){
+      getGsAccessToken(sa, function(token, err){
+        if (err || !token) { res(null); return; }
+        fetch('https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(sheetId)+
+              '/values/'+encodeURIComponent(SYNC_TAB)+'!A1:B999', {
+          headers: { 'Authorization': 'Bearer ' + token }
+        }).then(function(r){ return r.json(); })
+          .then(function(d){ res(assemble(d.values)); })
+          .catch(function(){ res(null); });
+      });
+    });
+  };
+
+  // (2) thử qua GViz công khai (Sheet phải chia sẻ "Bất kỳ ai có liên kết")
+  var tryGviz = function() {
+    var url = 'https://docs.google.com/spreadsheets/d/'+encodeURIComponent(sheetId)+
+              '/gviz/tq?tqx=out:json&sheet='+encodeURIComponent(SYNC_TAB);
+    return fetch(url).then(function(r){ return r.text(); }).then(function(txt){
+      var m = txt.match(/setResponse\(([\s\S]*)\);?\s*$/);
+      if (!m) return null;
+      var obj = JSON.parse(m[1]);
+      var rows = (obj.table && obj.table.rows) || [];
+      var arr = rows.map(function(row){
+        var cells = row.c || [];
+        return [ cells[0] && cells[0].v != null ? String(cells[0].v) : '',
+                 cells[1] && cells[1].v != null ? String(cells[1].v) : '' ];
+      });
+      return assemble(arr);
+    }).catch(function(){ return null; });
+  };
+
+  return tryJwt().then(function(p){ return p || tryGviz(); });
+}
+
+// Áp payload vào localStorage (không đụng tới results/logs cục bộ)
+function applyCloudConfig(payload) {
+  if (!payload) return false;
+  var applied = [];
+  DB._syncSuppress = true; // đang nạp từ đám mây → không đẩy ngược lên
+  try {
+    SYNC_KEYS.forEach(function(k){
+      if (payload[k] == null) return;
+      if (k === 'config') {
+        // Hợp nhất: giữ lại các trường nhạy cảm/cục bộ (Service Account, mật khẩu
+        // admin) đã có trên thiết bị này; chỉ nhận các trường cấu hình từ đám mây.
+        var local = DB.get('config') || {};
+        var merged = {};
+        Object.keys(payload.config).forEach(function(f){ merged[f] = payload.config[f]; });
+        SYNC_SENSITIVE.forEach(function(f){ if (local[f] != null) merged[f] = local[f]; });
+        // sheetId luôn ưu tiên giá trị đám mây nếu có, nếu không giữ cục bộ
+        if (!merged.sheetId && local.sheetId) merged.sheetId = local.sheetId;
+        DB.set('config', merged);
+      } else {
+        DB.set(k, payload[k]);
+      }
+      applied.push(k);
+    });
+    if (payload._ts) DB.set('cfgLastPull', payload._ts);
+  } finally {
+    DB._syncSuppress = false;
+  }
+  return applied.length > 0;
+}
+
+// So sánh mốc thời gian: cloud có mới hơn cục bộ không?
+function cloudIsNewer(payload) {
+  if (!payload || !payload._ts) return false;
+  var localTs = DB.get('cfgLastPull');
+  if (!localTs) return true;
+  return new Date(payload._ts).getTime() > new Date(localTs).getTime();
+}
+
+// ── TỰ ĐỘNG đồng bộ khi mở app (đặc biệt hữu ích trên điện thoại) ────────────
+function getSheetIdFromUrl() {
+  try {
+    var q = new URLSearchParams(window.location.search).get('sheet');
+    if (q) return q.trim();
+    var h = (window.location.hash || '').match(/sheet=([^&]+)/);
+    if (h) return decodeURIComponent(h[1]).trim();
+  } catch(e){}
+  return null;
+}
+
+function autoSyncOnBoot() {
+  // Ưu tiên ID nhúng trong URL (admin phát link/QR) → mobile đồng bộ tức thì, không cần nhập
+  var urlId = getSheetIdFromUrl();
+  if (urlId) DB.set(SYNC_LS_ID, urlId);
+  var sheetId = urlId || (DB.get('config')||{}).sheetId || DB.get(SYNC_LS_ID);
+  if (!sheetId) return; // chưa có gì để đồng bộ
+  showSyncBadge('loading','Đang đồng bộ cấu hình từ máy chủ...');
+  fetchCloudConfig(sheetId).then(function(payload){
+    if (payload && cloudIsNewer(payload)) {
+      applyCloudConfig(payload);
+      DB.set(SYNC_LS_ID, sheetId);
+      showSyncBadge('ok','Đã cập nhật cấu hình mới nhất từ Ban tổ chức');
+      // nếu đang ở màn thí sinh, cập nhật lại tiêu đề/đơn vị hiển thị
+      refreshCandidateUI();
+    } else if (payload) {
+      showSyncBadge('ok','Cấu hình đã là mới nhất');
+    } else {
+      showSyncBadge('none','');
+    }
+  }).catch(function(){ showSyncBadge('none',''); });
+}
+
+// Làm mới vài chỗ hiển thị phía thí sinh sau khi nạp cấu hình mới
+function refreshCandidateUI() {
+  try {
+    var cfg = DB.get('config') || {};
+    var t = document.getElementById('ex-title');
+    if (t && cfg.examTitle) t.textContent = cfg.examTitle;
+    // nạp lại gợi ý đơn vị nếu ô đang mở
+    var inp = document.getElementById('inp-unit');
+    if (inp && document.activeElement === inp) inp.dispatchEvent(new Event('input'));
+  } catch(e){}
+}
+
+// Huy hiệu trạng thái đồng bộ nhỏ ở góc màn hình
+function showSyncBadge(state, msg) {
+  var el = document.getElementById('sync-badge');
+  if (!el) return;
+  if (state === 'none') { el.style.display = 'none'; return; }
+  var icon = state === 'loading' ? '<i class="fas fa-sync-alt fa-spin"></i>'
+           : state === 'ok' ? '<i class="fas fa-check-circle"></i>'
+           : '<i class="fas fa-cloud"></i>';
+  el.className = 'sync-badge ' + state;
+  el.innerHTML = icon + '<span>'+esc(msg||'')+'</span>';
+  el.style.display = 'flex';
+  if (state === 'ok') setTimeout(function(){ el.style.display='none'; }, 3500);
+}
+
+// Nút "Đồng bộ ngay" thủ công cho thí sinh (ở trang login)
+function manualSync() {
+  var sheetId = (DB.get('config')||{}).sheetId || DB.get(SYNC_LS_ID);
+  if (!sheetId) {
+    // cho phép nhập Spreadsheet ID lần đầu trên thiết bị mới
+    var id = prompt('Nhập Mã bảng tính (Spreadsheet ID) do Ban tổ chức cung cấp để đồng bộ cấu hình:');
+    if (!id) return;
+    sheetId = id.trim();
+    DB.set(SYNC_LS_ID, sheetId);
+  }
+  showSyncBadge('loading','Đang đồng bộ...');
+  fetchCloudConfig(sheetId).then(function(payload){
+    if (payload) {
+      applyCloudConfig(payload);
+      DB.set(SYNC_LS_ID, sheetId);
+      refreshCandidateUI();
+      showSyncBadge('ok','Đồng bộ thành công!');
+      toast('✅ Đã đồng bộ cấu hình từ máy chủ!','success');
+    } else {
+      showSyncBadge('none','');
+      toast('❌ Không đọc được cấu hình. Kiểm tra Spreadsheet ID và quyền chia sẻ "Bất kỳ ai có liên kết".','error');
+    }
+  }).catch(function(e){
+    showSyncBadge('none','');
+    toast('❌ Đồng bộ thất bại: '+((e&&e.message)||e),'error');
+  });
+}
+
+// ── Nút đẩy cấu hình thủ công (phía admin, trong Cài đặt) ────────────────────
+function pushConfigManual() {
+  var c = DB.get('config') || {};
+  var st = document.getElementById('cfg-sync-status');
+  if (!c.saJson || !c.sheetId) {
+    if (st) st.innerHTML = '<span style="color:var(--danger)">Cần cấu hình Spreadsheet ID và Service Account trước.</span>';
+    toast('Vui lòng cấu hình Google Sheet (ID + Service Account) trước!','error');
+    return;
+  }
+  var btn = document.getElementById('btn-cfgpush');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Đang đẩy...'; }
+  if (st) st.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang đẩy cấu hình lên máy chủ...';
+  pushConfigToCloud({ onDone: function(ok, msg){
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-upload-alt me-1"></i>Đẩy cấu hình lên máy chủ'; }
+    if (ok) {
+      if (st) st.innerHTML = '<span style="color:var(--success)"><i class="fas fa-check-circle"></i> Đã đẩy cấu hình thành công! Mobile sẽ tự nhận khi mở app.</span>';
+      toast('✅ Đã đẩy cấu hình lên máy chủ!','success');
+      if (typeof pgSettings === 'function' && document.getElementById('sync-section')) pgSettings();
+    } else {
+      if (st) st.innerHTML = '<span style="color:var(--danger)"><i class="fas fa-times-circle"></i> Lỗi: '+esc(msg)+'</span>';
+      toast('❌ Đẩy cấu hình thất bại: '+msg,'error');
+    }
+  }});
+}
+
+// ── Nút tải lại cấu hình từ máy chủ (phía admin) ─────────────────────────────
+function pullConfigManual() {
+  var c = DB.get('config') || {};
+  var sheetId = c.sheetId || DB.get(SYNC_LS_ID);
+  var st = document.getElementById('cfg-sync-status');
+  if (!sheetId) { toast('Chưa có Spreadsheet ID.','error'); return; }
+  var btn = document.getElementById('btn-cfgpull');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Đang tải...'; }
+  if (st) st.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang tải cấu hình từ máy chủ...';
+  fetchCloudConfig(sheetId).then(function(payload){
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-download-alt me-1"></i>Tải lại cấu hình từ máy chủ'; }
+    if (payload) {
+      applyCloudConfig(payload);
+      if (st) st.innerHTML = '<span style="color:var(--success)"><i class="fas fa-check-circle"></i> Đã tải cấu hình mới nhất từ máy chủ.</span>';
+      toast('✅ Đã tải lại cấu hình từ máy chủ!','success');
+      if (typeof pgSettings === 'function') pgSettings();
+    } else {
+      if (st) st.innerHTML = '<span style="color:var(--danger)"><i class="fas fa-times-circle"></i> Không tìm thấy cấu hình trên máy chủ (chưa đẩy lần nào?).</span>';
+      toast('Không đọc được cấu hình từ máy chủ.','error');
+    }
+  }).catch(function(e){
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-cloud-download-alt me-1"></i>Tải lại cấu hình từ máy chủ'; }
+    toast('❌ Lỗi: '+((e&&e.message)||e),'error');
+  });
+}
+
+// Tạo link đồng bộ (kèm Spreadsheet ID) + mã QR để thí sinh quét bằng điện thoại
+function showSyncLink() {
+  var c = DB.get('config') || {};
+  var id = c.sheetId || DB.get(SYNC_LS_ID) || '';
+  if (!id) { toast('Chưa có Spreadsheet ID.','error'); return; }
+  var base = window.location.origin + window.location.pathname;
+  var link = base + '?sheet=' + encodeURIComponent(id);
+  var box = document.getElementById('sync-link-box');
+  if (!box) return;
+  var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(link);
+  box.innerHTML =
+    '<div class="sync-info">' +
+      '<p style="margin:0 0 8px;font-weight:600"><i class="fas fa-link me-1"></i>Link đồng bộ dành cho thí sinh:</p>' +
+      '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+        '<input class="fc" style="flex:1;min-width:220px;font-size:.82rem" readonly value="'+esc(link)+'" onclick="this.select()">' +
+        '<button onclick="copySyncLink(\''+esc(link).replace(/\\/g,'\\\\').replace(/'/g,"\\'")+'\')" class="btn btn-acc" style="border-radius:10px;padding:9px 16px"><i class="fas fa-copy me-1"></i>Sao chép</button>' +
+      '</div>' +
+      '<p style="margin:12px 0 6px;font-weight:600"><i class="fas fa-qrcode me-1"></i>Hoặc để thí sinh quét mã QR:</p>' +
+      '<img src="'+qrUrl+'" alt="QR đồng bộ" style="width:180px;height:180px;border:1px solid var(--border);border-radius:12px;background:white;padding:6px">' +
+      '<p style="margin:10px 0 0;font-size:.8rem;color:var(--text-muted)">Khi thí sinh mở link/QR trên điện thoại, ứng dụng tự tải cấu hình mới nhất. Nhớ chia sẻ Google Sheet ở chế độ <strong>“Bất kỳ ai có liên kết – Người xem”</strong>.</p>' +
+    '</div>';
+  box.style.display = 'block';
+}
+
+function copySyncLink(link) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(link).then(function(){ toast('Đã sao chép link đồng bộ!','success'); });
+  } else {
+    var ta=document.createElement('textarea'); ta.value=link; document.body.appendChild(ta); ta.select();
+    try{document.execCommand('copy'); toast('Đã sao chép link!','success');}catch(e){} document.body.removeChild(ta);
+  }
+}
+
+function copySheetId() {
+  var c = DB.get('config') || {};
+  var id = c.sheetId || DB.get(SYNC_LS_ID) || '';
+  if (!id) return;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(id).then(function(){ toast('Đã sao chép Spreadsheet ID!','success'); });
+  } else {
+    var ta = document.createElement('textarea'); ta.value = id; document.body.appendChild(ta);
+    ta.select(); try { document.execCommand('copy'); toast('Đã sao chép Spreadsheet ID!','success'); } catch(e){}
+    document.body.removeChild(ta);
+  }
+}
+
 // ─── BOOT ─────────────────────────────────────────────
 initData();
 setupDateInput();
 setupUnitAutocomplete();
+autoSyncOnBoot();
 </script>
 </body>
 </html>
