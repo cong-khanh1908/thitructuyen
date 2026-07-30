@@ -226,6 +226,7 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
   border:1px solid var(--border);max-width:90vw;animation:si .3s ease}
 .sync-badge.loading{color:var(--primary);border-color:#c7d2fe;background:#eef2ff}
 .sync-badge.ok{color:var(--success);border-color:#bbf7d0;background:#f0fdf4}
+.sync-badge.warn{color:#b45309;border-color:#fde68a;background:#fffbeb}
 .sync-badge span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* ── KHỐI ĐỒNG BỘ TRONG CÀI ĐẶT ── */
 .sync-info{background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:14px 16px;font-size:.85rem}
@@ -2633,6 +2634,7 @@ function pgSettings() {
       '<button onclick="pullConfigManual()" class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600" id="btn-cfgpull"><i class="fas fa-cloud-download-alt me-1"></i>Tải lại cấu hình từ máy chủ</button>' +
       (c.sheetId?'<button onclick="showSyncLink()" class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600"><i class="fas fa-qrcode me-1"></i>Tạo link/QR đồng bộ cho thí sinh</button>':'') +
       (c.sheetId?'<button onclick="downloadSelfSyncFile()" class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600"><i class="fas fa-file-download me-1"></i>Tải bản phát hành tự đồng bộ</button>':'') +
+      (c.sheetId?'<button onclick="testPublicRead()" class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600" id="btn-pubtest"><i class="fas fa-user-check me-1"></i>Kiểm tra thí sinh đọc được chưa</button>':'') +
       '<span id="cfg-sync-status" style="font-size:.8rem;color:var(--text-muted)"></span>' +
     '</div>' +
     '<div id="sync-link-box" style="display:none;margin-top:14px"></div>' +
@@ -3318,7 +3320,14 @@ function pushConfigToCloud(opts) {
     }).then(function(){
       return gsUpdateValues(c.sheetId, token, SYNC_TAB+'!A1', values);
     }).then(function(){
-      var cv = DB.get('config')||{}; cv.cfgLastPush = new Date().toISOString(); DB.set('config', cv);
+      // Lấy gid của tab cấu hình để dùng cho đường đọc CSV công khai (dự phòng)
+      return fetchSyncTabGid(c.sheetId, token).then(function(gid){
+        if (gid != null) DB.set('syncTabGid', gid);
+      }).catch(function(){});
+    }).then(function(){
+      var cv = DB.get('config')||{}; cv.cfgLastPush = new Date().toISOString();
+      var g = DB.get('syncTabGid'); if (g != null) cv.syncTabGid = g;
+      DB.set('config', cv);
       // Lưu Spreadsheet ID để lần sau (kể cả mobile) tự biết đọc từ đâu
       DB.set(SYNC_LS_ID, c.sheetId);
       addLog('SYNC','Đẩy cấu hình & ngân hàng đề lên đám mây ('+chunks.length+' phần, '+jsonStr.length+' ký tự)');
@@ -3326,6 +3335,20 @@ function pushConfigToCloud(opts) {
     }).catch(function(e){
       done(false, (e && e.message) ? e.message : String(e));
     });
+  });
+}
+
+// Lấy sheetId (gid) nội bộ của tab cấu hình qua Sheets API (cần token)
+function fetchSyncTabGid(sheetId, token) {
+  return fetch('https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(sheetId)+
+        '?fields=sheets.properties(title,sheetId)', {
+    headers: { 'Authorization': 'Bearer ' + token }
+  }).then(function(r){ return r.json(); }).then(function(d){
+    var found = null;
+    (d.sheets||[]).forEach(function(sh){
+      if (sh.properties && sh.properties.title === SYNC_TAB) found = sh.properties.sheetId;
+    });
+    return found;
   });
 }
 
@@ -3339,18 +3362,17 @@ function fetchCloudConfig(sheetId) {
   function assemble(rows) {
     // rows: mảng [ [colA,colB], ... ] theo thứ tự dòng
     if (!rows || !rows.length) return null;
-    var meta = null, parts = [];
+    var parts = [];
     rows.forEach(function(r){
-      var a = r[0]||'', b = r[1]||'';
-      if (a === '__META__') { try { meta = JSON.parse(b); } catch(e){} }
-      else if (/^part\d+$/.test(a)) parts[parseInt(a.slice(4),10)] = b;
+      var a = (r[0]==null?'':String(r[0])), b = (r[1]==null?'':String(r[1]));
+      if (/^part\d+$/.test(a)) parts[parseInt(a.slice(4),10)] = b;
     });
     var joined = parts.join('');
     if (!joined) return null;
     try { return JSON.parse(joined); } catch(e){ return null; }
   }
 
-  // (1) thử qua Service Account nếu thiết bị có
+  // (1) thử qua Service Account nếu thiết bị có (đường tin cậy nhất, cần secure ctx)
   var tryJwt = function() {
     if (!c.saJson) return Promise.resolve(null);
     var sa; try { sa = JSON.parse(c.saJson); } catch(e){ return Promise.resolve(null); }
@@ -3367,17 +3389,20 @@ function fetchCloudConfig(sheetId) {
     });
   };
 
-  // (2) thử qua GViz công khai (Sheet phải chia sẻ "Bất kỳ ai có liên kết")
+  // (2) GViz công khai — Sheet phải chia sẻ "Bất kỳ ai có liên kết – Người xem".
+  //     Dùng headers=0 để GViz KHÔNG coi dòng đầu là tiêu đề (nếu không dòng
+  //     part0/meta sẽ bị nuốt). Bóc JSON bằng cách tìm dấu ngoặc mở/đóng thay vì
+  //     regex tham lam để tránh hỏng khi có ký tự thừa ở cuối.
   var tryGviz = function() {
     var url = 'https://docs.google.com/spreadsheets/d/'+encodeURIComponent(sheetId)+
-              '/gviz/tq?tqx=out:json&sheet='+encodeURIComponent(SYNC_TAB);
-    return fetch(url).then(function(r){ return r.text(); }).then(function(txt){
-      var m = txt.match(/setResponse\(([\s\S]*)\);?\s*$/);
-      if (!m) return null;
-      var obj = JSON.parse(m[1]);
+              '/gviz/tq?tqx=out:json&headers=0&sheet='+encodeURIComponent(SYNC_TAB);
+    return fetch(url, { cache: 'no-store' }).then(function(r){ return r.text(); }).then(function(txt){
+      var json = extractGvizJson(txt);
+      if (!json) return null;
+      var obj; try { obj = JSON.parse(json); } catch(e){ return null; }
       var rows = (obj.table && obj.table.rows) || [];
       var arr = rows.map(function(row){
-        var cells = row.c || [];
+        var cells = (row && row.c) || [];
         return [ cells[0] && cells[0].v != null ? String(cells[0].v) : '',
                  cells[1] && cells[1].v != null ? String(cells[1].v) : '' ];
       });
@@ -3385,7 +3410,82 @@ function fetchCloudConfig(sheetId) {
     }).catch(function(){ return null; });
   };
 
-  return tryJwt().then(function(p){ return p || tryGviz(); });
+  // (3) CSV export công khai — ổn định hơn GViz với chuỗi JSON dài, ít bị cắt.
+  //     Cần biết gid của tab _HeThong → tra qua metadata GViz (không cần khóa).
+  var tryCsv = function() {
+    return getTabGid(sheetId, SYNC_TAB).then(function(gid){
+      if (gid == null) return null;
+      var url = 'https://docs.google.com/spreadsheets/d/'+encodeURIComponent(sheetId)+
+                '/export?format=csv&gid='+encodeURIComponent(gid);
+      return fetch(url, { cache: 'no-store' }).then(function(r){
+        if (!r.ok) return null;
+        return r.text();
+      }).then(function(csv){
+        if (!csv) return null;
+        return assemble(parseCsvRows(csv));
+      });
+    }).catch(function(){ return null; });
+  };
+
+  // Thử lần lượt: JWT → GViz → CSV. Cái nào ra dữ liệu trước thì dùng.
+  return tryJwt()
+    .then(function(p){ return p || tryGviz(); })
+    .then(function(p){ return p || tryCsv(); });
+}
+
+// Bóc phần JSON bên trong "...setResponse( <JSON> );" một cách an toàn:
+// tìm '(' đầu tiên sau setResponse và ')' cân bằng cuối cùng.
+function extractGvizJson(txt) {
+  if (!txt) return null;
+  var key = 'setResponse(';
+  var i = txt.indexOf(key);
+  if (i === -1) {
+    // một số phản hồi bắt đầu bằng google.visualization.Query.setResponse
+    var alt = txt.indexOf('(');
+    if (alt === -1) return null;
+    i = alt - key.length + 1; // fallback thô
+  }
+  var start = txt.indexOf('(', i);
+  if (start === -1) return null;
+  var end = txt.lastIndexOf(')');
+  if (end === -1 || end <= start) return null;
+  return txt.slice(start + 1, end);
+}
+
+// Lấy gid của tab cấu hình (cho đường CSV). Ưu tiên giá trị đã nhúng vào URL,
+// rồi tới cache/localStorage, rồi config đã đồng bộ trước đó.
+function getTabGid(sheetId, tabName) {
+  try {
+    var urlGid = new URLSearchParams(window.location.search).get('gid');
+    if (urlGid) return Promise.resolve(urlGid);
+  } catch(e){}
+  var cached = DB.get('syncTabGid');
+  if (cached != null && cached !== '') return Promise.resolve(cached);
+  var cfg = DB.get('config') || {};
+  if (cfg.syncTabGid != null && cfg.syncTabGid !== '') return Promise.resolve(cfg.syncTabGid);
+  return Promise.resolve(null);
+}
+
+// Parser CSV tối giản, hỗ trợ ô có dấu ngoặc kép và xuống dòng bên trong.
+function parseCsvRows(text) {
+  var rows = [], row = [], field = '', i = 0, inQ = false, ch;
+  while (i < text.length) {
+    ch = text[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (text[i+1] === '"') { field += '"'; i += 2; continue; }
+        inQ = false; i++; continue;
+      }
+      field += ch; i++; continue;
+    }
+    if (ch === '"') { inQ = true; i++; continue; }
+    if (ch === ',') { row.push(field); field = ''; i++; continue; }
+    if (ch === '\r') { i++; continue; }
+    if (ch === '\n') { row.push(field); rows.push(row); row = []; field = ''; i++; continue; }
+    field += ch; i++;
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows;
 }
 
 // Áp payload vào localStorage (không đụng tới results/logs cục bộ)
@@ -3482,13 +3582,17 @@ function doAutoSync(sheetId, opts) {
       else showSyncBadge('none','');
       return false;
     } else {
-      showSyncBadge('none','');
+      // Đọc về rỗng: thường do Sheet chưa chia sẻ công khai hoặc chưa có cấu hình.
+      // Chỉ cảnh báo nhẹ ở lần đầu (showLoading), các lần nền thì im lặng.
+      if (opts.showLoading) showSyncBadge('warn','Chưa nhận được cấu hình — báo Ban tổ chức chia sẻ Sheet công khai');
+      else showSyncBadge('none','');
       return false;
     }
   }).catch(function(){
     _syncState.inFlight = false;
     _syncState.firstDone = true;
-    showSyncBadge('none','');
+    if (opts.showLoading) showSyncBadge('warn','Không kết nối được máy chủ cấu hình');
+    else showSyncBadge('none','');
     return false;
   });
 }
@@ -3543,11 +3647,13 @@ function showSyncBadge(state, msg) {
   if (state === 'none') { el.style.display = 'none'; return; }
   var icon = state === 'loading' ? '<i class="fas fa-sync-alt fa-spin"></i>'
            : state === 'ok' ? '<i class="fas fa-check-circle"></i>'
+           : state === 'warn' ? '<i class="fas fa-exclamation-triangle"></i>'
            : '<i class="fas fa-cloud"></i>';
   el.className = 'sync-badge ' + state;
   el.innerHTML = icon + '<span>'+esc(msg||'')+'</span>';
   el.style.display = 'flex';
   if (state === 'ok') setTimeout(function(){ el.style.display='none'; }, 3500);
+  if (state === 'warn') setTimeout(function(){ el.style.display='none'; }, 6000);
 }
 
 // Nút "Đồng bộ ngay" thủ công cho thí sinh (ở trang login)
@@ -3569,12 +3675,59 @@ function manualSync() {
       showSyncBadge('ok','Đồng bộ thành công!');
       toast('✅ Đã đồng bộ cấu hình từ máy chủ!','success');
     } else {
-      showSyncBadge('none','');
-      toast('❌ Không đọc được cấu hình. Kiểm tra Spreadsheet ID và quyền chia sẻ "Bất kỳ ai có liên kết".','error');
+      showSyncBadge('warn','Chưa nhận được cấu hình từ máy chủ');
+      toast('❌ Chưa đọc được cấu hình. Nhờ Ban tổ chức: (1) đã bấm “Đẩy cấu hình lên máy chủ”, và (2) chia sẻ Google Sheet ở chế độ “Bất kỳ ai có liên kết – Người xem”.','error');
     }
   }).catch(function(e){
     showSyncBadge('none','');
     toast('❌ Đồng bộ thất bại: '+((e&&e.message)||e),'error');
+  });
+}
+
+// Kiểm tra đúng như thí sinh: đọc CÔNG KHAI (không dùng Service Account) để biết
+// Sheet đã share đúng chưa và cấu hình đã lên đó chưa.
+function testPublicRead() {
+  var c = DB.get('config') || {};
+  var id = c.sheetId || DB.get(SYNC_LS_ID) || '';
+  var st = document.getElementById('cfg-sync-status');
+  if (!id) { toast('Chưa có Spreadsheet ID.','error'); return; }
+  var btn = document.getElementById('btn-pubtest');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Đang kiểm tra...'; }
+  if (st) st.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Đang thử đọc công khai như thí sinh...';
+
+  var gvizUrl = 'https://docs.google.com/spreadsheets/d/'+encodeURIComponent(id)+
+                '/gviz/tq?tqx=out:json&headers=0&sheet='+encodeURIComponent(SYNC_TAB)+'&_='+Date.now();
+  fetch(gvizUrl, { cache: 'no-store' }).then(function(r){
+    return r.text().then(function(txt){ return { status: r.status, txt: txt }; });
+  }).then(function(res){
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-user-check me-1"></i>Kiểm tra thí sinh đọc được chưa'; }
+    // Trang đăng nhập Google trả về HTML → chưa share công khai
+    var looksHtml = /^\s*</.test(res.txt) || res.txt.indexOf('accounts.google.com') > -1 || res.txt.toLowerCase().indexOf('<html') > -1;
+    var json = extractGvizJson(res.txt);
+    var okData = false;
+    if (json) {
+      try {
+        var obj = JSON.parse(json);
+        var rows = (obj.table && obj.table.rows) || [];
+        okData = rows.some(function(row){
+          var a = row && row.c && row.c[0] && row.c[0].v;
+          return a && /^part\d+$/.test(String(a));
+        });
+      } catch(e){}
+    }
+    if (okData) {
+      if (st) st.innerHTML = '<span style="color:var(--success)"><i class="fas fa-check-circle"></i> <strong>Thí sinh ĐỌC ĐƯỢC.</strong> Sheet đã chia sẻ công khai và cấu hình đã lên máy chủ. Mọi thiết bị sẽ tự đồng bộ.</span>';
+      toast('✅ Thí sinh đọc được cấu hình!','success');
+    } else if (looksHtml || res.status === 401 || res.status === 403) {
+      if (st) st.innerHTML = '<span style="color:var(--danger)"><i class="fas fa-lock"></i> <strong>Sheet CHƯA chia sẻ công khai.</strong> Mở Google Sheet → nút <strong>Chia sẻ</strong> → “Người có quyền truy cập chung” → chọn <em>“Bất kỳ ai có đường liên kết – Người xem”</em>. Đây là lý do điện thoại không đồng bộ được.</span>';
+      toast('❌ Sheet chưa được chia sẻ công khai — thí sinh chưa đọc được.','error');
+    } else {
+      if (st) st.innerHTML = '<span style="color:var(--danger)"><i class="fas fa-exclamation-triangle"></i> <strong>Chưa có cấu hình trên máy chủ.</strong> Hãy bấm “Đẩy cấu hình lên máy chủ” trước, rồi thử lại.</span>';
+      toast('Chưa thấy cấu hình trên Sheet — hãy đẩy cấu hình trước.','error');
+    }
+  }).catch(function(e){
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-user-check me-1"></i>Kiểm tra thí sinh đọc được chưa'; }
+    if (st) st.innerHTML = '<span style="color:var(--danger)"><i class="fas fa-times-circle"></i> Không kết nối được tới Google: '+esc((e&&e.message)||e)+'</span>';
   });
 }
 
@@ -3675,6 +3828,8 @@ function showSyncLink() {
   if (!id) { toast('Chưa có Spreadsheet ID.','error'); return; }
   var base = window.location.origin + window.location.pathname;
   var link = base + '?sheet=' + encodeURIComponent(id);
+  var gid = (c.syncTabGid != null ? c.syncTabGid : DB.get('syncTabGid'));
+  if (gid != null && gid !== '') link += '&gid=' + encodeURIComponent(gid);
   var box = document.getElementById('sync-link-box');
   if (!box) return;
   var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(link);
