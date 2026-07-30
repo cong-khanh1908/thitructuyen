@@ -393,7 +393,7 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
       <div class="qcard">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:10px;flex-wrap:wrap">
           <span class="qnum" id="qnum">Câu 1</span>
-          <span style="font-size:.82rem;color:var(--text-muted);white-space:nowrap" id="qac">Đã trả lời: 0/40</span>
+          <span style="font-size:.82rem;color:var(--text-muted);white-space:nowrap" id="qac">Đã trả lời: 0/0</span>
         </div>
         <div class="pg mb-4"><div class="pgb" id="epg" style="width:0%"></div></div>
         <p class="qtext" id="qtxt">Đang tải...</p>
@@ -905,6 +905,46 @@ function isValidDOB(str) {
 }
 
 // ─── EXAM FLOW ────────────────────────────────────────
+// Tạo danh sách câu hỏi cho một lượt thi, tôn trọng cấu trúc đề (structure) của
+// bộ đề nếu có: mỗi chủ đề lấy đúng số câu quy định; nếu chủ đề thiếu câu thì bù
+// từ phần còn lại của ngân hàng. Nếu không có bộ đề, lấy theo tổng số câu cấu hình
+// (cfg.totalQ) hoặc toàn bộ ngân hàng.
+function buildExamQuestions(allQs, activeSet, cfg) {
+  function shuffle(a){ return a.slice().sort(function(){ return Math.random()-0.5; }); }
+
+  // Có cấu trúc phân bổ theo chủ đề
+  if (activeSet && activeSet.structure && activeSet.structure.length) {
+    var used = {};       // id đã lấy
+    var result = [];
+    // gom câu theo topic (so khớp không phân biệt hoa thường, cắt khoảng trắng)
+    function norm(s){ return String(s == null ? '' : s).trim().toLowerCase(); }
+    activeSet.structure.forEach(function(item){
+      var want = item.count || 0;
+      var poolTopic = shuffle(allQs.filter(function(q){
+        return !used[q.id] && norm(q.topic) === norm(item.topic);
+      }));
+      var takeN = Math.min(want, poolTopic.length);
+      for (var i = 0; i < takeN; i++) {
+        used[poolTopic[i].id] = true; result.push(poolTopic[i]);
+      }
+    });
+    // Bù cho đủ tổng nếu một số chủ đề thiếu câu
+    var target = activeSet.totalQ || result.length;
+    if (result.length < target) {
+      var rest = shuffle(allQs.filter(function(q){ return !used[q.id]; }));
+      for (var j = 0; j < rest.length && result.length < target; j++) {
+        used[rest[j].id] = true; result.push(rest[j]);
+      }
+    }
+    return shuffle(result); // trộn lại để các chủ đề không xếp thành khối
+  }
+
+  // Không có cấu trúc: dùng tổng số câu mong muốn
+  var total = (activeSet && activeSet.totalQ) || cfg.totalQ || allQs.length;
+  total = Math.min(total, allQs.length);
+  return shuffle(allQs).slice(0, total);
+}
+
 function startExam() {
   var name  = (document.getElementById('inp-name').value  || '').trim();
   var dob   = (document.getElementById('inp-dob').value   || '').trim();
@@ -919,10 +959,19 @@ function startExam() {
   var qs  = DB.get('questions') || [];
   if (!qs.length) { toast('Chưa có câu hỏi trong hệ thống!', 'error'); return; }
 
-  // Shuffle & pick questions
-  var pool = qs.slice().sort(function() { return Math.random() - 0.5; });
-  var take = Math.min(40, pool.length);
-  var examQs = pool.slice(0, take).map(function(q) {
+  // Chọn "đề nguồn": ưu tiên bộ đề (examset) mới nhất do admin tạo, vì nó chứa
+  // cấu trúc phân bổ theo chủ đề + tổng số câu + thời gian đúng như cài đặt.
+  var sets = DB.get('examsets') || [];
+  var activeSet = sets.length ? sets[sets.length - 1] : null;
+
+  // Số phút: ưu tiên bộ đề, rồi tới cấu hình kỳ thi
+  var minutes = (activeSet && activeSet.timeLimit) ? activeSet.timeLimit : (cfg.timeLimit || 30);
+
+  // Lấy danh sách câu theo cấu trúc đề
+  var picked = buildExamQuestions(qs, activeSet, cfg);
+  if (!picked.length) { toast('Không tạo được đề thi từ ngân hàng câu hỏi!', 'error'); return; }
+
+  var examQs = picked.map(function(q) {
     // Chỉ lấy các đáp án thực sự có nội dung (bỏ đáp án trống)
     var srcKeys = ['a','b','c','d'].filter(function(k) {
       return q[k] != null && String(q[k]).trim() !== '';
@@ -957,7 +1006,7 @@ function startExam() {
   S.exam = { questions: examQs, code: examCode };
   S.qi = 0; S.answers = {}; S.violations = 0;
   S.startTime = Date.now();
-  S.timeLeft = (cfg.timeLimit || 30) * 60;
+  S.timeLeft = minutes * 60;
 
   document.getElementById('ex-title').textContent = cfg.examTitle || 'Kỳ thi trực tuyến';
   document.getElementById('ex-cand').textContent  = name + ' \u2022 Mã đề: ' + examCode;
@@ -1386,12 +1435,32 @@ function showPage(page) {
     monitor:pgMonitor, results:pgResults, reports:pgReports, settings:pgSettings, logs:pgLogs };
   if (pages[page]) pages[page]();
   if (window.innerWidth < 768) document.getElementById('sidebar').classList.remove('open');
+
+  // Giám sát trực tiếp: tự làm mới kết quả từ Sheet mỗi 20 giây để theo dõi realtime
+  if (_monitorTimer) { clearInterval(_monitorTimer); _monitorTimer = null; }
+  if (page === 'monitor') {
+    _monitorTimer = setInterval(function(){
+      if (S.screen !== 'admin') { clearInterval(_monitorTimer); _monitorTimer = null; return; }
+      pullResultsFromSheet().then(function(added){
+        if (added > 0 && document.getElementById('apc')) pgMonitor();
+      });
+    }, 20000);
+  }
 }
+var _monitorTimer = null;
 
 function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
 
 // ── DASHBOARD ──
+var _dashPullInFlight = false;
 function pgDash() {
+  if (!_dashPullInFlight) {
+    _dashPullInFlight = true;
+    pullResultsFromSheet().then(function(added){
+      _dashPullInFlight = false;
+      if (added > 0 && S.screen === 'admin' && document.getElementById('apc')) pgDash();
+    }).catch(function(){ _dashPullInFlight = false; });
+  }
   var results  = DB.get('results') || [];
   var questions = DB.get('questions') || [];
   var scores = results.map(function(r) { return r.score; });
@@ -2326,7 +2395,15 @@ function saveConfig() {
 }
 
 // ── MONITOR ──
+var _monPullInFlight = false;
 function pgMonitor() {
+  if (!_monPullInFlight) {
+    _monPullInFlight = true;
+    pullResultsFromSheet().then(function(added){
+      _monPullInFlight = false;
+      if (added > 0 && document.getElementById('apc') && S.screen === 'admin') pgMonitor();
+    }).catch(function(){ _monPullInFlight = false; });
+  }
   var results = DB.get('results') || [];
   var recent = results.filter(function(r) { return Date.now() - new Date(r.time).getTime() < 3600000; });
   var rowsHtml = '';
@@ -2348,8 +2425,19 @@ function pgMonitor() {
 
 // ── RESULTS ──
 var RES_FILTER = '';
+var _resPullInFlight = false;
 
 function pgResults() {
+  // Kéo kết quả mới từ Google Sheet (chạy nền, không chặn hiển thị).
+  if (!_resPullInFlight) {
+    _resPullInFlight = true;
+    pullResultsFromSheet().then(function(added){
+      _resPullInFlight = false;
+      if (added > 0 && S.screen === 'admin' && document.getElementById('res-search') !== null) {
+        pgResults(); // render lại với dữ liệu mới
+      }
+    }).catch(function(){ _resPullInFlight = false; });
+  }
   var results = DB.get('results') || [];
   var kw = (RES_FILTER || '').trim().toLowerCase();
   var list = results.slice().reverse();
@@ -2391,6 +2479,7 @@ function pgResults() {
           '<i class="fas fa-search" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:.8rem"></i>' +
           '<input id="res-search" type="text" placeholder="Tìm tên / đơn vị / mã đề..." value="'+esc(RES_FILTER)+'" oninput="onResSearch(this.value)" style="border:1.5px solid var(--border);border-radius:8px;padding:7px 12px 7px 32px;font-size:.85rem;width:230px">' +
         '</div>' +
+        '<button onclick="refreshResultsFromSheet(true)" class="btn btn-sm btn-outline-secondary" style="border-radius:8px;font-weight:600" id="btn-pullres"><i class="fas fa-cloud-download-alt me-1"></i>Tải kết quả từ Sheet</button>' +
         '<button onclick="exportXLSX()" class="btn btn-sm btn-outline-secondary" style="border-radius:8px;font-weight:600"><i class="fas fa-file-excel me-1"></i>Xuất tổng hợp</button>' +
         '<button onclick="exportDetailXLSX()" class="btn btn-sm btn-acc" style="border-radius:8px;padding:6px 14px"><i class="fas fa-file-lines me-1"></i>Xuất chi tiết</button>' +
         '<button onclick="clearResults()" class="btn btn-sm btn-dc" style="border-radius:8px"><i class="fas fa-trash me-1"></i>Xóa tất cả</button>' +
@@ -2416,7 +2505,11 @@ function viewResultDetail(id) {
   var results = DB.get('results') || [];
   var r = results.filter(function(x){ return x.id === id; })[0];
   if (!r) { toast('Không tìm thấy kết quả!','error'); return; }
-  if (!r.details || !r.details.length) { toast('Kết quả này không có dữ liệu chi tiết!','error'); return; }
+  if (!r.details || !r.details.length) {
+    if (r.fromSheet) toast('Bài làm này được tải từ Google Sheet nên không có chi tiết từng câu tại đây. Xem tab "'+((DB.get('config')||{}).detailSheetName||'ChiTiet')+'" trong Google Sheet để có chi tiết đầy đủ.','info');
+    else toast('Kết quả này không có dữ liệu chi tiết!','error');
+    return;
+  }
 
   var answeredCnt = r.details.filter(function(d){ return d.answered; }).length;
   var blankCnt = r.details.length - answeredCnt;
@@ -3106,6 +3199,83 @@ function gsDetailRows(result) {
   return rows;
 }
 
+// ── Đọc kết quả (tổng hợp) từ Google Sheet về cho admin xem ──────────────────
+// Dùng đường công khai (GViz) nên admin không cần thao tác gì thêm ngoài việc
+// Sheet đã ở chế độ "Bất kỳ ai có liên kết – Người xem". Trả về Promise<count>.
+function pullResultsFromSheet(opts) {
+  opts = opts || {};
+  var c = DB.get('config') || {};
+  var sheetId = c.sheetId || DB.get(SYNC_LS_ID);
+  var tab = c.sheetName || 'KetQua';
+  if (!sheetId) return Promise.resolve(0);
+
+  var url = 'https://docs.google.com/spreadsheets/d/'+encodeURIComponent(sheetId)+
+            '/gviz/tq?tqx=out:json&headers=1&sheet='+encodeURIComponent(tab)+'&_='+Date.now();
+  return fetch(url, { cache: 'no-store' }).then(function(r){ return r.text(); }).then(function(txt){
+    var json = extractGvizJson(txt);
+    if (!json) return 0;
+    var obj; try { obj = JSON.parse(json); } catch(e){ return 0; }
+    var rows = (obj.table && obj.table.rows) || [];
+    // Mỗi hàng: [Thời gian nộp, Họ tên, Ngày sinh, Đơn vị, SĐT, Mã đề, Đúng/Tổng, Điểm, TG làm, Vi phạm]
+    var fetched = [];
+    rows.forEach(function(row){
+      var c0 = (row && row.c) || [];
+      function val(i){ return c0[i] && c0[i].v != null ? String(c0[i].v) : (c0[i] && c0[i].f != null ? String(c0[i].f) : ''); }
+      var name = val(1);
+      if (!name || name.indexOf('[GỬI THỬ]') > -1) return; // bỏ dòng test
+      var correctTotal = val(6).split('/');
+      var scoreStr = val(7).replace('%','').trim();
+      fetched.push({
+        // id tổng hợp ổn định để chống trùng: thời gian + tên + mã đề
+        id: 'sheet:' + val(0) + '|' + name + '|' + val(5),
+        time: val(0),
+        name: name, dob: val(2), unit: val(3), phone: val(4),
+        examCode: val(5),
+        correct: parseInt(correctTotal[0], 10) || 0,
+        totalQ: parseInt(correctTotal[1], 10) || 0,
+        score: parseFloat(scoreStr) || 0,
+        timeUsed: val(8),
+        violations: parseInt(val(9), 10) || 0,
+        details: [],
+        fromSheet: true,
+        synced: true
+      });
+    });
+
+    // Gộp vào localStorage, tránh trùng: khóa theo (time|name|examCode)
+    var local = DB.get('results') || [];
+    var seen = {};
+    local.forEach(function(r){
+      var key = (new Date(r.time).toLocaleString('vi-VN')) + '|' + r.name + '|' + r.examCode;
+      seen[key] = true;
+      var key2 = r.time + '|' + r.name + '|' + r.examCode; seen[key2] = true;
+    });
+    var added = 0;
+    fetched.forEach(function(fr){
+      var key = fr.time + '|' + fr.name + '|' + fr.examCode;
+      if (!seen[key]) { local.push(fr); seen[key] = true; added++; }
+    });
+    if (added > 0) {
+      DB._syncSuppress = true;
+      try { DB.set('results', local); } finally { DB._syncSuppress = false; }
+    }
+    return added;
+  }).catch(function(){ return 0; });
+}
+
+// Làm mới danh sách kết quả trên trang admin bằng cách kéo từ Sheet rồi render lại
+function refreshResultsFromSheet(showToast) {
+  return pullResultsFromSheet().then(function(added){
+    if (typeof pgResults === 'function' && S.screen === 'admin') { try { pgResults(); } catch(e){} }
+    if (typeof pgMonitor === 'function') { try { if (document.getElementById('mon-body')) pgMonitor(); } catch(e){} }
+    if (showToast) {
+      if (added > 0) toast('✅ Đã tải '+added+' kết quả mới từ Google Sheet!','success');
+      else toast('Không có kết quả mới trên Google Sheet.','info');
+    }
+    return added;
+  });
+}
+
 // Lấy metadata (danh sách tab hiện có) của spreadsheet
 function gsFetchTabs(sheetId, token) {
   return fetch('https://sheets.googleapis.com/v4/spreadsheets/'+encodeURIComponent(sheetId)+'?fields=sheets.properties.title', {
@@ -3429,8 +3599,8 @@ function toast(msg, type) {
   var c = document.getElementById('tc');
   var el = document.createElement('div');
   el.className = 'toast-i ' + type;
-  var icon = type === 'success' ? 'fas fa-check-circle' : 'fas fa-exclamation-circle';
-  var color = type === 'success' ? 'var(--success)' : 'var(--danger)';
+  var icon = type === 'success' ? 'fas fa-check-circle' : (type === 'info' ? 'fas fa-info-circle' : 'fas fa-exclamation-circle');
+  var color = type === 'success' ? 'var(--success)' : (type === 'info' ? 'var(--primary)' : 'var(--danger)');
   el.innerHTML = '<i class="'+icon+'" style="color:'+color+'"></i><span>'+esc(msg)+'</span>';
   c.appendChild(el);
   setTimeout(function() { el.style.transition='opacity .3s'; el.style.opacity='0'; setTimeout(function(){el.remove();},300); }, 3000);
