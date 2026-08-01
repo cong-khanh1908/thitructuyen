@@ -2522,8 +2522,8 @@ function pgResults() {
     _resPullInFlight = true;
     pullResultsFromSheet().then(function(added){
       _resPullInFlight = false;
-      if (added > 0 && S.screen === 'admin' && document.getElementById('res-search') !== null) {
-        pgResults(); // render lại với dữ liệu mới
+      if ((added > 0 || _lastBackfilled > 0) && S.screen === 'admin' && document.getElementById('res-search') !== null) {
+        pgResults(); // render lại với dữ liệu mới / vừa bổ sung chi tiết
       }
     }).catch(function(){ _resPullInFlight = false; });
   }
@@ -4004,12 +4004,98 @@ function parseVnDateTime(s) {
 // ── Đọc kết quả (tổng hợp) từ Google Sheet về cho admin xem ──────────────────
 // Dùng đường công khai (GViz) nên admin không cần thao tác gì thêm ngoài việc
 // Sheet đã ở chế độ "Bất kỳ ai có liên kết – Người xem". Trả về Promise<count>.
+// Đọc 1 tab bất kỳ qua GViz, trả về Promise<rows[]> (mỗi row là mảng ô GViz).
+function gvizFetchRows(sheetId, tab) {
+  var url = 'https://docs.google.com/spreadsheets/d/'+encodeURIComponent(sheetId)+
+            '/gviz/tq?tqx=out:json&headers=1&sheet='+encodeURIComponent(tab)+'&_='+Date.now();
+  return fetch(url, { cache: 'no-store' })
+    .then(function(r){ return r.text(); })
+    .then(function(txt){
+      var json = extractGvizJson(txt);
+      if (!json) return [];
+      var obj; try { obj = JSON.parse(json); } catch(e){ return []; }
+      return (obj.table && obj.table.rows) || [];
+    })
+    .catch(function(){ return []; });
+}
+
+// Đọc tab chi tiết (ChiTiet) và dựng lại details[] cho từng thí sinh.
+// Trả về Promise< map: khóa(when|name|examCode) -> details[] >.
+// Cột ChiTiet: [Thời gian nộp, Họ tên, Đơn vị, SĐT, Mã đề, Câu số, Nội dung,
+//   Đáp án chọn, Nội dung đáp án chọn, Đáp án đúng, Nội dung đáp án đúng, Kết quả, Điểm câu]
+function pullDetailsFromSheet(sheetId, detailTab) {
+  return gvizFetchRows(sheetId, detailTab).then(function(rows){
+    var map = {};
+    function cs(cell){
+      if (!cell) return '';
+      if (cell.f != null && String(cell.f).trim() !== '') return String(cell.f);
+      if (cell.v == null) return '';
+      return String(cell.v);
+    }
+    rows.forEach(function(row){
+      var c0 = (row && row.c) || [];
+      var name = cs(c0[1]);
+      if (!name || name.indexOf('[GỬI THỬ]') > -1) return;
+      var whenRaw = cs(c0[0]);
+      var whenD = parseVnDateTime(whenRaw);
+      // chuẩn hóa "when" giống lúc gộp summary: dùng chuỗi hiển thị vi-VN nếu parse được
+      var when = whenD ? whenD.toLocaleString('vi-VN') : whenRaw;
+      var unit = cs(c0[2]);
+      var examCode = cs(c0[4]);
+      var qNo = parseInt(cs(c0[5]), 10) || 0;
+      var content = cs(c0[6]);
+      var userAns = cs(c0[7]).trim();
+      var userText = cs(c0[8]);
+      var corAns = cs(c0[9]).trim();
+      var corText = cs(c0[10]);
+      var status = cs(c0[11]).trim();
+      var qScore = cs(c0[12]);
+
+      var answered = status.toLowerCase().indexOf('bỏ trống') === -1 && userAns !== '';
+      var isOk = status.toLowerCase() === 'đúng';
+
+      // Dựng options: đảm bảo có cả đáp án đúng và đáp án thí sinh chọn
+      var opts = [];
+      var seen = {};
+      function addOpt(letter, text){
+        if (!letter) return;
+        if (seen[letter]) { if (text && !seen[letter].text) seen[letter].text = text; return; }
+        var o = { letter: letter, text: text || '' }; opts.push(o); seen[letter] = o;
+      }
+      addOpt(corAns, corText);
+      addOpt(userAns, userText);
+      opts.sort(function(a,b){ return a.letter < b.letter ? -1 : a.letter > b.letter ? 1 : 0; });
+
+      var det = {
+        qid: examCode+'-'+qNo,
+        content: content,
+        options: opts,
+        correct: corAns || null,
+        userAns: answered ? (userAns || null) : null,
+        isOk: isOk,
+        answered: answered,
+        score: qScore !== '' ? (parseFloat(qScore) || 0) : null,
+        _qNo: qNo
+      };
+      var key = when + '|' + name + '|' + examCode;
+      (map[key] = map[key] || []).push(det);
+    });
+    // Sắp xếp mỗi bộ theo số câu
+    Object.keys(map).forEach(function(k){
+      map[k].sort(function(a,b){ return (a._qNo||0)-(b._qNo||0); });
+      map[k].forEach(function(d){ delete d._qNo; });
+    });
+    return map;
+  });
+}
+
 function pullResultsFromSheet(opts) {
   opts = opts || {};
   if (_suppressResultPull && !opts.force) return Promise.resolve(0);
   var c = DB.get('config') || {};
   var sheetId = c.sheetId || DB.get(SYNC_LS_ID);
   var tab = c.sheetName || 'KetQua';
+  var detailTab = c.detailSheetName || 'ChiTiet';
   if (!sheetId) return Promise.resolve(0);
 
   var url = 'https://docs.google.com/spreadsheets/d/'+encodeURIComponent(sheetId)+
@@ -4096,26 +4182,53 @@ function pullResultsFromSheet(opts) {
       });
     });
 
-    // Gộp vào localStorage, tránh trùng: khóa theo (time|name|examCode)
-    var local = DB.get('results') || [];
-    var seen = {};
-    local.forEach(function(r){
-      var key = (new Date(r.time).toLocaleString('vi-VN')) + '|' + r.name + '|' + r.examCode;
-      seen[key] = true;
-      var key2 = r.time + '|' + r.name + '|' + r.examCode; seen[key2] = true;
+    // Đọc thêm tab chi tiết để dựng lại bài làm từng câu, rồi mới gộp.
+    return pullDetailsFromSheet(sheetId, detailTab).then(function(detailMap){
+      // Gắn details cho các bản ghi vừa lấy (khóa theo chuỗi hiển thị vi-VN)
+      function detailKey(fr){
+        var when = fr.time ? new Date(fr.time).toLocaleString('vi-VN') : (fr.timeText||'');
+        return when + '|' + fr.name + '|' + fr.examCode;
+      }
+      fetched.forEach(function(fr){
+        var dt = detailMap[detailKey(fr)] || (fr.timeText ? detailMap[fr.timeText+'|'+fr.name+'|'+fr.examCode] : null);
+        if (dt && dt.length) fr.details = dt;
+      });
+
+      // Gộp vào localStorage, tránh trùng: khóa theo (time|name|examCode)
+      var local = DB.get('results') || [];
+      var seen = {};
+      local.forEach(function(r){
+        var key = (new Date(r.time).toLocaleString('vi-VN')) + '|' + r.name + '|' + r.examCode;
+        seen[key] = true;
+        var key2 = r.time + '|' + r.name + '|' + r.examCode; seen[key2] = true;
+      });
+      var added = 0;
+      fetched.forEach(function(fr){
+        var key = fr.time + '|' + fr.name + '|' + fr.examCode;
+        if (!seen[key]) { local.push(fr); seen[key] = true; added++; }
+      });
+
+      // Backfill: bản ghi từ Sheet đã có sẵn nhưng còn thiếu chi tiết → bổ sung
+      var backfilled = 0;
+      local.forEach(function(r){
+        if (r.fromSheet && (!r.details || !r.details.length)) {
+          var when = r.time ? new Date(r.time).toLocaleString('vi-VN') : (r.timeText||'');
+          var dt = detailMap[when + '|' + r.name + '|' + r.examCode] ||
+                   (r.timeText ? detailMap[r.timeText + '|' + r.name + '|' + r.examCode] : null);
+          if (dt && dt.length) { r.details = dt; backfilled++; }
+        }
+      });
+
+      if (added > 0 || backfilled > 0) {
+        DB._syncSuppress = true;
+        try { DB.set('results', local); } finally { DB._syncSuppress = false; }
+      }
+      _lastBackfilled = backfilled;
+      return added;
     });
-    var added = 0;
-    fetched.forEach(function(fr){
-      var key = fr.time + '|' + fr.name + '|' + fr.examCode;
-      if (!seen[key]) { local.push(fr); seen[key] = true; added++; }
-    });
-    if (added > 0) {
-      DB._syncSuppress = true;
-      try { DB.set('results', local); } finally { DB._syncSuppress = false; }
-    }
-    return added;
   }).catch(function(){ return 0; });
 }
+var _lastBackfilled = 0;
 
 // Làm mới danh sách kết quả trên trang admin bằng cách kéo từ Sheet rồi render lại
 function refreshResultsFromSheet(showToast) {
@@ -4126,6 +4239,7 @@ function refreshResultsFromSheet(showToast) {
     if (typeof pgMonitor === 'function') { try { if (document.getElementById('mon-body')) pgMonitor(); } catch(e){} }
     if (showToast) {
       if (added > 0) toast('✅ Đã tải '+added+' kết quả mới từ Google Sheet!','success');
+      else if (_lastBackfilled > 0) toast('✅ Đã bổ sung bài làm chi tiết cho '+_lastBackfilled+' thí sinh từ Google Sheet!','success');
       else toast('Không có kết quả mới trên Google Sheet.','info');
     }
     return added;
