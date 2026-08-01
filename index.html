@@ -23,6 +23,8 @@ window.addEventListener('unhandledrejection', function(e) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
 :root{--primary:#1a3a6b;--primary-light:#2756a8;--accent:#e8a020;--accent-dark:#c4860f;--success:#1e7e5e;--danger:#c0392b;--surface:#f5f7fb;--card-bg:#fff;--text:#1a1f2e;--text-muted:#6b7280;--border:#e2e8f0;--sidebar-w:260px}
 *{box-sizing:border-box}
@@ -2305,11 +2307,20 @@ function pgConfig() {
       '</div>' +
 
       // Số lần vi phạm tối đa trước khi nộp bài
-      '<div class="col-12">' +
+      '<div class="col-6">' +
         '<label class="fl">Số lần vi phạm tối đa <span style="color:var(--text-muted);font-weight:400;font-size:.8rem">(0 = không giới hạn)</span></label>' +
         '<div style="display:flex;align-items:center;gap:12px">' +
           '<input class="fc" id="cfg-maxviol" type="number" min="0" max="99" value="'+(c.maxViolations||0)+'" style="max-width:120px">' +
           '<p style="margin:0;font-size:.8rem;color:var(--text-muted)">Khi đạt số lần này, bài thi sẽ tự động bị nộp</p>' +
+        '</div>' +
+      '</div>' +
+
+      // Điểm đạt (ngưỡng %) — dùng cho báo cáo thống kê
+      '<div class="col-6">' +
+        '<label class="fl">Điểm đạt (%) <span style="color:var(--text-muted);font-weight:400;font-size:.8rem">(dùng cho thống kê tỷ lệ đạt)</span></label>' +
+        '<div style="display:flex;align-items:center;gap:12px">' +
+          '<input class="fc" id="cfg-pass" type="number" min="0" max="100" value="'+(c.passScore!=null?c.passScore:50)+'" style="max-width:120px">' +
+          '<p style="margin:0;font-size:.8rem;color:var(--text-muted)">Thí sinh đạt từ mức % này trở lên được tính là "Đạt"</p>' +
         '</div>' +
       '</div>' +
 
@@ -2412,6 +2423,14 @@ function saveConfig() {
   // Handle max violations
   var mvEl = document.getElementById('cfg-maxviol');
   c.maxViolations = mvEl ? (parseInt(mvEl.value, 10) || 0) : 0;
+
+  // Handle pass score (ngưỡng đạt %)
+  var psEl = document.getElementById('cfg-pass');
+  if (psEl) {
+    var ps = parseInt(psEl.value, 10);
+    if (isNaN(ps) || ps < 0 || ps > 100) { toast('Điểm đạt phải từ 0 đến 100!', 'error'); return; }
+    c.passScore = ps;
+  }
 
   if (!c.examTitle) { toast('Vui lòng nhập tên kỳ thi!', 'error'); return; }
   DB.set('config', c);
@@ -2850,51 +2869,480 @@ function clearResultsOnSheet(c) {
   return Promise.reject(new Error('Chưa cấu hình kênh ghi (Apps Script hoặc Service Account)'));
 }
 
-// ── REPORTS ──
-function pgReports() {
-  var results = DB.get('results') || [];
-  var qs = (DB.get('questions') || []).slice(0,10);
-  var topHtml = '';
-  results.slice().sort(function(a,b){return b.score-a.score;}).slice(0,10).forEach(function(r,i) {
-    var bg = i<3 ? 'var(--accent)' : 'var(--border)';
-    var fc2 = i<3 ? 'white' : 'var(--text-muted)';
-    topHtml += '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">';
-    topHtml += '<div style="display:flex;align-items:center;gap:10px">';
-    topHtml += '<span style="width:24px;height:24px;background:'+bg+';border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;color:'+fc2+'">'+( i+1)+'</span>';
-    topHtml += '<div><p style="margin:0;font-weight:600;font-size:.9rem">'+esc(r.name)+'</p><p style="margin:0;font-size:.75rem;color:var(--text-muted)">'+esc(r.unit)+'</p></div></div>';
-    topHtml += '<strong style="color:var(--primary)">'+r.score+'%</strong></div>';
-  });
-  if (!topHtml) topHtml = '<p style="color:var(--text-muted);text-align:center;padding:20px">Chưa có dữ liệu</p>';
+// ── REPORTS (nâng cấp hoàn chỉnh) ──
+// Tính toán toàn bộ thống kê từ dữ liệu kết quả thực tế (DB 'results')
+// và ngân hàng câu hỏi (DB 'questions'). Không dùng dữ liệu mẫu / random.
+var _rptCharts = {};
 
-  var qRowHtml = '';
-  qs.forEach(function(q) {
-    var rate = Math.floor(Math.random()*60+30);
-    var sc2 = rate>=70?'var(--success)':rate>=50?'var(--accent)':'var(--danger)';
-    qRowHtml += '<tr>';
-    qRowHtml += '<td><code style="background:#f1f5f9;padding:2px 8px;border-radius:6px">'+esc(q.id)+'</code></td>';
-    qRowHtml += '<td style="font-size:.85rem">'+esc(q.content.substring(0,45))+(q.content.length>45?'...':'')+'</td>';
-    qRowHtml += '<td><strong style="color:'+sc2+'">'+rate+'%</strong></td>';
-    qRowHtml += '<td style="width:150px"><div class="pg"><div class="pgb" style="width:'+rate+'%;background:'+sc2+'"></div></div></td>';
-    qRowHtml += '</tr>';
+function _rptDestroyCharts() {
+  Object.keys(_rptCharts).forEach(function(k){
+    try { _rptCharts[k].destroy(); } catch(e){}
   });
+  _rptCharts = {};
+}
+
+// Gom số liệu thống kê phục vụ cả hiển thị lẫn xuất file
+function computeReportStats() {
+  var results = DB.get('results') || [];
+  var questions = DB.get('questions') || [];
+  var cfg = DB.get('config') || {};
+
+  // Phổ điểm (5 khoảng)
+  var dist = [0,0,0,0,0];
+  results.forEach(function(r){
+    var s = Number(r.score) || 0;
+    if (s<=20) dist[0]++; else if (s<=40) dist[1]++; else if (s<=60) dist[2]++; else if (s<=80) dist[3]++; else dist[4]++;
+  });
+
+  // Thống kê tổng quan
+  var n = results.length;
+  var scores = results.map(function(r){ return Number(r.score)||0; });
+  var avg = n ? scores.reduce(function(a,b){return a+b;},0)/n : 0;
+  var maxScore = n ? Math.max.apply(null, scores) : 0;
+  var minScore = n ? Math.min.apply(null, scores) : 0;
+  var passThreshold = Number(cfg.passScore) || 50;
+  var passed = scores.filter(function(s){ return s>=passThreshold; }).length;
+  var passRate = n ? (passed/n*100) : 0;
+  var totalViol = results.reduce(function(a,r){ return a + (Number(r.violations)||0); },0);
+
+  // Top 10 điểm cao (điểm cao trước, cùng điểm thì ít vi phạm hơn / nộp sớm hơn)
+  var topScore = results.slice().sort(function(a,b){
+    if ((b.score||0) !== (a.score||0)) return (b.score||0)-(a.score||0);
+    if ((a.violations||0) !== (b.violations||0)) return (a.violations||0)-(b.violations||0);
+    return new Date(a.time||0) - new Date(b.time||0);
+  }).slice(0,10);
+
+  // Top 10 vi phạm nhiều nhất (chỉ tính người có vi phạm > 0)
+  var topViol = results.filter(function(r){ return (Number(r.violations)||0) > 0; })
+    .sort(function(a,b){
+      if ((b.violations||0) !== (a.violations||0)) return (b.violations||0)-(a.violations||0);
+      return (a.score||0)-(b.score||0);
+    }).slice(0,10);
+
+  // Tỷ lệ trả lời đúng từng câu hỏi — tính THỰC từ details của mọi bài thi
+  // map: qid -> { content, topic, level, attempts, correct, answered }
+  var qMap = {};
+  // Khởi tạo từ ngân hàng câu hỏi để câu chưa ai làm vẫn xuất hiện
+  questions.forEach(function(q){
+    qMap[q.id] = { qid:q.id, content:q.content||'', topic:q.topic||'', level:q.level||'',
+                   attempts:0, correct:0, answered:0 };
+  });
+  results.forEach(function(r){
+    (r.details||[]).forEach(function(d){
+      if (!qMap[d.qid]) {
+        qMap[d.qid] = { qid:d.qid, content:d.content||'', topic:d.topic||'', level:d.level||'',
+                        attempts:0, correct:0, answered:0 };
+      }
+      var m = qMap[d.qid];
+      m.attempts++;
+      if (d.answered) m.answered++;
+      if (d.isOk) m.correct++;
+    });
+  });
+  var qStats = Object.keys(qMap).map(function(k){
+    var m = qMap[k];
+    m.rate = m.attempts ? Math.round(m.correct/m.attempts*100) : null; // null = chưa có lượt thi
+    m.blank = m.attempts - m.answered;
+    return m;
+  });
+  // Sắp xếp: câu đã có lượt thi trước (theo tỷ lệ đúng tăng dần để nổi bật câu khó), rồi câu chưa thi
+  qStats.sort(function(a,b){
+    if (a.attempts===0 && b.attempts===0) return String(a.qid).localeCompare(String(b.qid));
+    if (a.attempts===0) return 1;
+    if (b.attempts===0) return -1;
+    return a.rate - b.rate;
+  });
+
+  return {
+    results:results, questions:questions, cfg:cfg,
+    dist:dist, n:n, avg:avg, maxScore:maxScore, minScore:minScore,
+    passThreshold:passThreshold, passed:passed, passRate:passRate, totalViol:totalViol,
+    topScore:topScore, topViol:topViol, qStats:qStats
+  };
+}
+
+function _fmtDate(t) {
+  if (!t) return '—';
+  try { return new Date(t).toLocaleString('vi-VN'); } catch(e){ return '—'; }
+}
+function _fmt1(x){ return (Math.round(x*10)/10).toString(); }
+
+function pgReports() {
+  _rptDestroyCharts();
+  var st = computeReportStats();
+  var examTitle = (st.cfg.examTitle) || 'Kỳ thi trực tuyến';
+
+  // ── Thẻ tổng quan ──
+  function stat(icon, color, val, lbl){
+    return '<div class="col-6 col-lg-3"><div class="card-stat" style="padding:18px">' +
+      '<div class="s-icon" style="width:44px;height:44px;background:'+color+'22;color:'+color+';margin-bottom:12px"><i class="'+icon+'"></i></div>' +
+      '<div class="s-val" style="font-size:1.6rem">'+val+'</div>' +
+      '<div class="s-lbl">'+lbl+'</div></div></div>';
+  }
+  var overviewHtml =
+    '<div class="row g-3 mb-3">' +
+      stat('fas fa-users','#2756a8', st.n, 'Lượt thi') +
+      stat('fas fa-chart-line','#1e7e5e', st.n? _fmt1(st.avg)+'%':'—', 'Điểm trung bình') +
+      stat('fas fa-check-double','#e8a020', st.n? _fmt1(st.passRate)+'%':'—', 'Tỷ lệ đạt (≥'+st.passThreshold+'%)') +
+      stat('fas fa-triangle-exclamation','#c0392b', st.totalViol, 'Tổng lượt vi phạm') +
+    '</div>';
+
+  // ── Top 10 điểm cao ──
+  var topScoreHtml = '';
+  st.topScore.forEach(function(r,i){
+    var medal = i===0?'#e8a020':i===1?'#94a3b8':i===2?'#b45309':'var(--border)';
+    var fc = i<3?'#fff':'var(--text-muted)';
+    topScoreHtml += '<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #f1f5f9">' +
+      '<div style="display:flex;align-items:center;gap:10px;min-width:0">' +
+      '<span style="flex:none;width:26px;height:26px;background:'+medal+';border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:700;color:'+fc+'">'+(i+1)+'</span>' +
+      '<div style="min-width:0"><p style="margin:0;font-weight:600;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(r.name||'—')+'</p>' +
+      '<p style="margin:0;font-size:.75rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(r.unit||'—')+'</p></div></div>' +
+      '<div style="text-align:right;flex:none"><strong style="color:var(--primary);font-size:.95rem">'+(r.score||0)+'%</strong>' +
+      (r.violations? '<div style="font-size:.68rem;color:var(--danger)">⚠ '+r.violations+'</div>':'') + '</div></div>';
+  });
+  if (!topScoreHtml) topScoreHtml = '<p style="color:var(--text-muted);text-align:center;padding:24px">Chưa có dữ liệu thi</p>';
+
+  // ── Top 10 vi phạm ──
+  var topViolHtml = '';
+  st.topViol.forEach(function(r,i){
+    topViolHtml += '<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #f1f5f9">' +
+      '<div style="display:flex;align-items:center;gap:10px;min-width:0">' +
+      '<span style="flex:none;width:26px;height:26px;background:'+(i<3?'#c0392b':'var(--border)')+';border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.78rem;font-weight:700;color:'+(i<3?'#fff':'var(--text-muted)')+'">'+(i+1)+'</span>' +
+      '<div style="min-width:0"><p style="margin:0;font-weight:600;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(r.name||'—')+'</p>' +
+      '<p style="margin:0;font-size:.75rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(r.unit||'—')+'</p></div></div>' +
+      '<div style="text-align:right;flex:none"><strong style="color:var(--danger);font-size:.95rem">'+r.violations+' lần</strong>' +
+      '<div style="font-size:.68rem;color:var(--text-muted)">'+ (r.score||0) +'%</div></div></div>';
+  });
+  if (!topViolHtml) topViolHtml = '<p style="color:var(--text-muted);text-align:center;padding:24px">Không có thí sinh vi phạm 🎉</p>';
+
+  // ── Bảng tỷ lệ trả lời đúng từng câu ──
+  var answeredQ = st.qStats.filter(function(q){ return q.attempts>0; });
+  var qRowHtml = '';
+  st.qStats.forEach(function(q){
+    var hasData = q.attempts>0;
+    var rate = q.rate;
+    var sc2 = !hasData ? 'var(--text-muted)' : rate>=70?'var(--success)':rate>=50?'var(--accent)':'var(--danger)';
+    var lvlBadge = q.level ? '<span class="bl '+(q.level==='easy'?'be':q.level==='hard'?'bh':'bm')+'" style="font-size:.68rem">'+(q.level==='easy'?'Dễ':q.level==='hard'?'Khó':'TB')+'</span>' : '';
+    qRowHtml += '<tr>' +
+      '<td><code style="background:#f1f5f9;padding:2px 8px;border-radius:6px">'+esc(q.qid)+'</code></td>' +
+      '<td style="font-size:.85rem;max-width:340px">'+esc((q.content||'').substring(0,80))+((q.content||'').length>80?'…':'')+' '+lvlBadge+'</td>' +
+      '<td style="text-align:center;font-size:.82rem;color:var(--text-muted)">'+ (hasData? q.attempts : '—') +'</td>' +
+      '<td style="text-align:center"><strong style="color:'+sc2+'">'+ (hasData? rate+'%' : 'Chưa thi') +'</strong></td>' +
+      '<td style="width:160px"><div class="pg"><div class="pgb" style="width:'+(hasData?rate:0)+'%;background:'+sc2+'"></div></div></td>' +
+    '</tr>';
+  });
+  if (!qRowHtml) qRowHtml = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px">Chưa có câu hỏi</td></tr>';
+
+  var disabled = st.n===0 ? ' disabled title="Chưa có dữ liệu"' : '';
 
   document.getElementById('apc').innerHTML =
-    '<div class="row g-3 mb-3">' +
-      '<div class="col-12 col-md-6"><div class="card-stat"><h6 style="font-weight:700;margin-bottom:20px">Phổ điểm</h6><canvas id="rpt-chart" height="220"></canvas></div></div>' +
-      '<div class="col-12 col-md-6"><div class="card-stat"><h6 style="font-weight:700;margin-bottom:20px">Top 10 thí sinh điểm cao</h6>'+topHtml+'</div></div>' +
+    overviewHtml +
+    // Thanh nút xuất báo cáo tổng hợp
+    '<div class="dt-header" style="border:1px solid var(--border);border-radius:14px;background:#fff;margin-bottom:16px">' +
+      '<h5 style="display:flex;align-items:center;gap:8px"><i class="fas fa-file-export" style="color:var(--primary)"></i>Xuất báo cáo thống kê tổng hợp</h5>' +
+      '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="btn btn-outline-secondary" style="border-radius:9px;font-weight:600;font-size:.85rem" onclick="exportReportExcel()"'+disabled+'><i class="fas fa-file-excel me-1" style="color:#1e7e5e"></i>Excel</button>' +
+        '<button class="btn btn-outline-secondary" style="border-radius:9px;font-weight:600;font-size:.85rem" onclick="exportReportWord()"'+disabled+'><i class="fas fa-file-word me-1" style="color:#2756a8"></i>Word</button>' +
+        '<button class="btn btn-outline-secondary" style="border-radius:9px;font-weight:600;font-size:.85rem" onclick="exportReportPDF()"'+disabled+'><i class="fas fa-file-pdf me-1" style="color:#c0392b"></i>PDF</button>' +
+      '</div>' +
     '</div>' +
-    '<div class="dt"><div class="dt-header"><h5>Tỷ lệ trả lời đúng (mẫu)</h5></div>' +
-    '<div class="table-responsive"><table class="table tc"><thead><tr><th>Mã câu</th><th>Nội dung</th><th>% Đúng</th><th>Biểu đồ</th></tr></thead><tbody>'+qRowHtml+'</tbody></table></div></div>';
+    // Hàng 1: Phổ điểm + phân loại
+    '<div class="row g-3 mb-3">' +
+      '<div class="col-12 col-lg-7"><div class="card-stat"><h6 style="font-weight:700;margin-bottom:16px">Phổ điểm</h6><div style="position:relative;height:260px"><canvas id="rpt-chart-dist"></canvas></div></div></div>' +
+      '<div class="col-12 col-lg-5"><div class="card-stat"><h6 style="font-weight:700;margin-bottom:16px">Phân loại Đạt / Không đạt</h6><div style="position:relative;height:260px"><canvas id="rpt-chart-pass"></canvas></div></div></div>' +
+    '</div>' +
+    // Hàng 2: Top điểm cao + top vi phạm
+    '<div class="row g-3 mb-3">' +
+      '<div class="col-12 col-lg-6"><div class="card-stat"><h6 style="font-weight:700;margin-bottom:14px"><i class="fas fa-trophy me-2" style="color:#e8a020"></i>Top 10 thí sinh điểm cao</h6>'+topScoreHtml+'</div></div>' +
+      '<div class="col-12 col-lg-6"><div class="card-stat"><h6 style="font-weight:700;margin-bottom:14px"><i class="fas fa-user-slash me-2" style="color:#c0392b"></i>Top 10 thí sinh vi phạm nhiều nhất</h6>'+topViolHtml+'</div></div>' +
+    '</div>' +
+    // Bảng tỷ lệ trả lời đúng
+    '<div class="dt">' +
+      '<div class="dt-header">' +
+        '<h5><i class="fas fa-list-check me-2" style="color:var(--primary)"></i>Tỷ lệ trả lời đúng của từng câu hỏi</h5>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+          '<span style="font-size:.8rem;color:var(--text-muted)">'+answeredQ.length+'/'+st.qStats.length+' câu đã có lượt thi</span>' +
+          '<button class="btn btn-outline-secondary btn-sm" style="border-radius:8px;font-weight:600" onclick="exportQuestionExcel()"'+disabled+'><i class="fas fa-file-excel me-1" style="color:#1e7e5e"></i>Excel</button>' +
+          '<button class="btn btn-outline-secondary btn-sm" style="border-radius:8px;font-weight:600" onclick="exportQuestionWord()"'+disabled+'><i class="fas fa-file-word me-1" style="color:#2756a8"></i>Word</button>' +
+          '<button class="btn btn-outline-secondary btn-sm" style="border-radius:8px;font-weight:600" onclick="exportQuestionPDF()"'+disabled+'><i class="fas fa-file-pdf me-1" style="color:#c0392b"></i>PDF</button>' +
+        '</div>' +
+      '</div>' +
+      '<div class="table-responsive"><table class="table tc"><thead><tr>' +
+        '<th>Mã câu</th><th>Nội dung</th><th style="text-align:center">Lượt thi</th><th style="text-align:center">% Đúng</th><th>Biểu đồ</th>' +
+      '</tr></thead><tbody>'+qRowHtml+'</tbody></table></div>' +
+    '</div>';
 
-  var cnts = [0,0,0,0,0];
-  results.forEach(function(r) {
-    if(r.score<=20)cnts[0]++; else if(r.score<=40)cnts[1]++; else if(r.score<=60)cnts[2]++; else if(r.score<=80)cnts[3]++; else cnts[4]++;
-  });
-  new Chart(document.getElementById('rpt-chart'),{
+  // ── Vẽ biểu đồ phổ điểm ──
+  _rptCharts.dist = new Chart(document.getElementById('rpt-chart-dist'), {
     type:'bar',
-    data:{labels:['0-20','21-40','41-60','61-80','81-100'],datasets:[{label:'Thí sinh',data:cnts,backgroundColor:['#ef4444','#f97316','#eab308','#22c55e','#3b82f6'],borderRadius:8}]},
-    options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}
+    data:{ labels:['0-20','21-40','41-60','61-80','81-100'],
+      datasets:[{ label:'Số thí sinh', data:st.dist,
+        backgroundColor:['#c0392b','#e8760f','#e8a020','#3fa34d','#1e7e5e'], borderRadius:8, maxBarThickness:70 }] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false},
+        tooltip:{ callbacks:{ label:function(c){ var tot=st.n||1; return c.parsed.y+' thí sinh ('+Math.round(c.parsed.y/tot*100)+'%)'; } } } },
+      scales:{ y:{ beginAtZero:true, ticks:{ stepSize:1, precision:0 }, title:{display:true,text:'Số thí sinh'} },
+               x:{ title:{display:true,text:'Khoảng điểm (%)'} } } }
   });
+
+  // ── Biểu đồ đạt / không đạt ──
+  var failCnt = st.n - st.passed;
+  _rptCharts.pass = new Chart(document.getElementById('rpt-chart-pass'), {
+    type:'doughnut',
+    data:{ labels:['Đạt (≥'+st.passThreshold+'%)','Không đạt'],
+      datasets:[{ data:[st.passed, failCnt], backgroundColor:['#1e7e5e','#c0392b'], borderWidth:2, borderColor:'#fff' }] },
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'62%',
+      plugins:{ legend:{position:'bottom'},
+        tooltip:{ callbacks:{ label:function(c){ var tot=st.n||1; return c.label+': '+c.parsed+' ('+Math.round(c.parsed/tot*100)+'%)'; } } } } }
+  });
+}
+
+// ═══════════ XUẤT FILE ═══════════
+function _dl(blob, filename) {
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 500);
+}
+function _tsName(base, ext){
+  var d = new Date();
+  var p = function(x){ return (x<10?'0':'')+x; };
+  return base + '_' + d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'_'+p(d.getHours())+p(d.getMinutes()) + '.' + ext;
+}
+
+// ---------- EXCEL: báo cáo tổng hợp ----------
+function exportReportExcel() {
+  var st = computeReportStats();
+  if (!st.n) { toast('Chưa có dữ liệu để xuất','error'); return; }
+  var wb = XLSX.utils.book_new();
+  var examTitle = st.cfg.examTitle || 'Kỳ thi trực tuyến';
+
+  // Sheet 1: Tổng quan
+  var ov = [
+    ['BÁO CÁO THỐNG KÊ KỲ THI'],
+    ['Kỳ thi', examTitle],
+    ['Ngày xuất', new Date().toLocaleString('vi-VN')],
+    [],
+    ['Chỉ số','Giá trị'],
+    ['Tổng lượt thi', st.n],
+    ['Điểm trung bình (%)', _fmt1(st.avg)],
+    ['Điểm cao nhất (%)', st.maxScore],
+    ['Điểm thấp nhất (%)', st.minScore],
+    ['Ngưỡng đạt (%)', st.passThreshold],
+    ['Số thí sinh đạt', st.passed],
+    ['Tỷ lệ đạt (%)', _fmt1(st.passRate)],
+    ['Tổng lượt vi phạm', st.totalViol],
+    [],
+    ['PHỔ ĐIỂM'],
+    ['Khoảng điểm','Số thí sinh'],
+    ['0-20', st.dist[0]],['21-40', st.dist[1]],['41-60', st.dist[2]],['61-80', st.dist[3]],['81-100', st.dist[4]]
+  ];
+  var ws1 = XLSX.utils.aoa_to_sheet(ov); ws1['!cols']=[{wch:26},{wch:40}];
+  XLSX.utils.book_append_sheet(wb, ws1, 'Tổng quan');
+
+  // Sheet 2: Top điểm cao
+  var t1 = [['#','Họ tên','Đơn vị','Mã đề','Điểm (%)','Số câu đúng','Vi phạm','Thời gian nộp']];
+  st.topScore.forEach(function(r,i){ t1.push([i+1, r.name||'', r.unit||'', r.examCode||'', r.score||0, (r.correct!=null?r.correct+'/'+r.totalQ:''), r.violations||0, _fmtDate(r.time)]); });
+  var ws2 = XLSX.utils.aoa_to_sheet(t1); ws2['!cols']=[{wch:5},{wch:22},{wch:20},{wch:10},{wch:9},{wch:11},{wch:9},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, ws2, 'Top điểm cao');
+
+  // Sheet 3: Top vi phạm
+  var t2 = [['#','Họ tên','Đơn vị','Mã đề','Số lần vi phạm','Điểm (%)','Thời gian nộp']];
+  st.topViol.forEach(function(r,i){ t2.push([i+1, r.name||'', r.unit||'', r.examCode||'', r.violations||0, r.score||0, _fmtDate(r.time)]); });
+  if (st.topViol.length===0) t2.push(['','Không có thí sinh vi phạm','','','','','']);
+  var ws3 = XLSX.utils.aoa_to_sheet(t2); ws3['!cols']=[{wch:5},{wch:22},{wch:20},{wch:10},{wch:15},{wch:9},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, ws3, 'Top vi phạm');
+
+  // Sheet 4: Tỷ lệ trả lời đúng
+  var t3 = [['Mã câu','Nội dung','Chủ đề','Độ khó','Lượt thi','Số đúng','Bỏ trống','% Đúng']];
+  st.qStats.forEach(function(q){ t3.push([q.qid, q.content||'', q.topic||'', q.level||'', q.attempts, q.correct, q.blank, q.rate==null?'Chưa thi':q.rate]); });
+  var ws4 = XLSX.utils.aoa_to_sheet(t3); ws4['!cols']=[{wch:10},{wch:55},{wch:16},{wch:8},{wch:9},{wch:8},{wch:9},{wch:9}];
+  XLSX.utils.book_append_sheet(wb, ws4, 'Tỷ lệ đúng theo câu');
+
+  // Sheet 5: Toàn bộ kết quả (raw)
+  var t5 = [['Họ tên','Ngày sinh','Đơn vị','SĐT','Mã đề','Điểm (%)','Câu đúng','Tổng câu','Vi phạm','Thời gian làm','Thời điểm nộp']];
+  st.results.forEach(function(r){ t5.push([r.name||'',r.dob||'',r.unit||'',r.phone||'',r.examCode||'',r.score||0,r.correct||0,r.totalQ||0,r.violations||0,r.timeUsed||'',_fmtDate(r.time)]); });
+  var ws5 = XLSX.utils.aoa_to_sheet(t5); ws5['!cols']=[{wch:22},{wch:12},{wch:20},{wch:13},{wch:10},{wch:9},{wch:9},{wch:9},{wch:9},{wch:13},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, ws5, 'Chi tiết kết quả');
+
+  XLSX.writeFile(wb, _tsName('BaoCao_ThongKe','xlsx'));
+  toast('Đã xuất báo cáo Excel','success');
+  if (typeof addLog==='function') addLog('EXPORT','Xuất báo cáo thống kê Excel');
+}
+
+// ---------- EXCEL: tỷ lệ trả lời đúng theo câu ----------
+function exportQuestionExcel() {
+  var st = computeReportStats();
+  if (!st.qStats.length) { toast('Chưa có câu hỏi','error'); return; }
+  var wb = XLSX.utils.book_new();
+  var rows = [['Mã câu','Nội dung','Chủ đề','Độ khó','Lượt thi','Số đúng','Bỏ trống','% Đúng']];
+  st.qStats.forEach(function(q){ rows.push([q.qid, q.content||'', q.topic||'', q.level||'', q.attempts, q.correct, q.blank, q.rate==null?'Chưa thi':q.rate]); });
+  var ws = XLSX.utils.aoa_to_sheet(rows); ws['!cols']=[{wch:10},{wch:60},{wch:16},{wch:8},{wch:9},{wch:8},{wch:9},{wch:9}];
+  XLSX.utils.book_append_sheet(wb, ws, 'Tỷ lệ trả lời đúng');
+  XLSX.writeFile(wb, _tsName('TyLeTraLoiDung','xlsx'));
+  toast('Đã xuất Excel tỷ lệ trả lời đúng','success');
+  if (typeof addLog==='function') addLog('EXPORT','Xuất tỷ lệ trả lời đúng (Excel)');
+}
+
+// ---------- Trợ giúp: tạo HTML để mở/lưu Word (.doc) ----------
+function _wordDoc(title, bodyHtml) {
+  var html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">' +
+    '<head><meta charset="utf-8"><title>'+esc(title)+'</title>' +
+    '<style>body{font-family:"Times New Roman",serif;font-size:12pt;color:#000}h1{font-size:16pt;text-align:center}h2{font-size:13pt;color:#1a3a6b;border-bottom:1px solid #999;padding-bottom:3px}table{border-collapse:collapse;width:100%;margin:8px 0}th,td{border:1px solid #666;padding:5px 7px;font-size:10.5pt}th{background:#1a3a6b;color:#fff}tr:nth-child(even) td{background:#f2f4f8}.muted{color:#555;font-size:10pt}</style></head>' +
+    '<body>'+bodyHtml+'</body></html>';
+  var blob = new Blob(['\ufeff'+html], {type:'application/msword'});
+  return blob;
+}
+
+// ---------- WORD: báo cáo tổng hợp ----------
+function exportReportWord() {
+  var st = computeReportStats();
+  if (!st.n) { toast('Chưa có dữ liệu để xuất','error'); return; }
+  var examTitle = st.cfg.examTitle || 'Kỳ thi trực tuyến';
+  var b = '';
+  b += '<h1>BÁO CÁO THỐNG KÊ KỲ THI</h1>';
+  b += '<p style="text-align:center" class="muted">'+esc(examTitle)+' · Xuất ngày '+new Date().toLocaleString('vi-VN')+'</p>';
+
+  b += '<h2>1. Tổng quan</h2><table><tr><th>Chỉ số</th><th>Giá trị</th></tr>' +
+    '<tr><td>Tổng lượt thi</td><td>'+st.n+'</td></tr>' +
+    '<tr><td>Điểm trung bình</td><td>'+_fmt1(st.avg)+'%</td></tr>' +
+    '<tr><td>Điểm cao nhất / thấp nhất</td><td>'+st.maxScore+'% / '+st.minScore+'%</td></tr>' +
+    '<tr><td>Tỷ lệ đạt (≥'+st.passThreshold+'%)</td><td>'+st.passed+'/'+st.n+' ('+_fmt1(st.passRate)+'%)</td></tr>' +
+    '<tr><td>Tổng lượt vi phạm</td><td>'+st.totalViol+'</td></tr></table>';
+
+  b += '<h2>2. Phổ điểm</h2><table><tr><th>Khoảng điểm</th><th>0-20</th><th>21-40</th><th>41-60</th><th>61-80</th><th>81-100</th></tr>' +
+    '<tr><td>Số thí sinh</td><td>'+st.dist[0]+'</td><td>'+st.dist[1]+'</td><td>'+st.dist[2]+'</td><td>'+st.dist[3]+'</td><td>'+st.dist[4]+'</td></tr></table>';
+
+  b += '<h2>3. Top 10 thí sinh điểm cao</h2><table><tr><th>#</th><th>Họ tên</th><th>Đơn vị</th><th>Điểm</th><th>Câu đúng</th><th>Vi phạm</th></tr>';
+  st.topScore.forEach(function(r,i){ b += '<tr><td>'+(i+1)+'</td><td>'+esc(r.name||'')+'</td><td>'+esc(r.unit||'')+'</td><td>'+(r.score||0)+'%</td><td>'+(r.correct!=null?r.correct+'/'+r.totalQ:'')+'</td><td>'+(r.violations||0)+'</td></tr>'; });
+  b += '</table>';
+
+  b += '<h2>4. Top 10 thí sinh vi phạm nhiều nhất</h2><table><tr><th>#</th><th>Họ tên</th><th>Đơn vị</th><th>Số lần vi phạm</th><th>Điểm</th></tr>';
+  if (st.topViol.length){ st.topViol.forEach(function(r,i){ b += '<tr><td>'+(i+1)+'</td><td>'+esc(r.name||'')+'</td><td>'+esc(r.unit||'')+'</td><td>'+(r.violations||0)+'</td><td>'+(r.score||0)+'%</td></tr>'; }); }
+  else { b += '<tr><td colspan="5" style="text-align:center">Không có thí sinh vi phạm</td></tr>'; }
+  b += '</table>';
+
+  b += '<h2>5. Tỷ lệ trả lời đúng của từng câu hỏi</h2><table><tr><th>Mã câu</th><th>Nội dung</th><th>Lượt thi</th><th>Số đúng</th><th>% Đúng</th></tr>';
+  st.qStats.forEach(function(q){ b += '<tr><td>'+esc(q.qid)+'</td><td>'+esc((q.content||'').substring(0,120))+'</td><td>'+q.attempts+'</td><td>'+q.correct+'</td><td>'+(q.rate==null?'Chưa thi':q.rate+'%')+'</td></tr>'; });
+  b += '</table>';
+
+  _dl(_wordDoc('Báo cáo thống kê', b), _tsName('BaoCao_ThongKe','doc'));
+  toast('Đã xuất báo cáo Word','success');
+  if (typeof addLog==='function') addLog('EXPORT','Xuất báo cáo thống kê Word');
+}
+
+// ---------- WORD: tỷ lệ trả lời đúng ----------
+function exportQuestionWord() {
+  var st = computeReportStats();
+  if (!st.qStats.length) { toast('Chưa có câu hỏi','error'); return; }
+  var b = '<h1>TỶ LỆ TRẢ LỜI ĐÚNG THEO CÂU HỎI</h1>';
+  b += '<p style="text-align:center" class="muted">'+esc(st.cfg.examTitle||'Kỳ thi trực tuyến')+' · Xuất ngày '+new Date().toLocaleString('vi-VN')+'</p>';
+  b += '<table><tr><th>Mã câu</th><th>Nội dung</th><th>Chủ đề</th><th>Độ khó</th><th>Lượt thi</th><th>Số đúng</th><th>Bỏ trống</th><th>% Đúng</th></tr>';
+  st.qStats.forEach(function(q){
+    b += '<tr><td>'+esc(q.qid)+'</td><td>'+esc(q.content||'')+'</td><td>'+esc(q.topic||'')+'</td><td>'+esc(q.level||'')+'</td><td>'+q.attempts+'</td><td>'+q.correct+'</td><td>'+q.blank+'</td><td>'+(q.rate==null?'Chưa thi':q.rate+'%')+'</td></tr>';
+  });
+  b += '</table>';
+  _dl(_wordDoc('Tỷ lệ trả lời đúng', b), _tsName('TyLeTraLoiDung','doc'));
+  toast('Đã xuất Word tỷ lệ trả lời đúng','success');
+  if (typeof addLog==='function') addLog('EXPORT','Xuất tỷ lệ trả lời đúng (Word)');
+}
+
+// ---------- PDF helpers (jsPDF + autotable) ----------
+function _getPdf() {
+  var J = window.jspdf ? window.jspdf.jsPDF : (window.jsPDF||null);
+  if (!J) { toast('Thư viện PDF chưa tải xong, thử lại sau','error'); return null; }
+  return new J({ orientation:'p', unit:'pt', format:'a4' });
+}
+
+// ---------- PDF: báo cáo tổng hợp ----------
+function exportReportPDF() {
+  var st = computeReportStats();
+  if (!st.n) { toast('Chưa có dữ liệu để xuất','error'); return; }
+  var doc = _getPdf(); if (!doc) return;
+  var W = doc.internal.pageSize.getWidth();
+  // Tiêu đề (dùng font mặc định — bỏ dấu để hiển thị đúng trên mọi máy)
+  doc.setFontSize(15); doc.setFont(undefined,'bold');
+  doc.text('BAO CAO THONG KE KY THI', W/2, 40, {align:'center'});
+  doc.setFontSize(9); doc.setFont(undefined,'normal');
+  doc.text(_deaccent((st.cfg.examTitle||'Ky thi truc tuyen')) + '  |  Xuat: ' + new Date().toLocaleString('vi-VN'), W/2, 56, {align:'center'});
+
+  doc.autoTable({ startY:72, head:[['Chi so','Gia tri']],
+    body:[
+      ['Tong luot thi', String(st.n)],
+      ['Diem trung binh', _fmt1(st.avg)+'%'],
+      ['Diem cao nhat / thap nhat', st.maxScore+'% / '+st.minScore+'%'],
+      ['Ty le dat (>='+st.passThreshold+'%)', st.passed+'/'+st.n+' ('+_fmt1(st.passRate)+'%)'],
+      ['Tong luot vi pham', String(st.totalViol)]
+    ],
+    theme:'grid', headStyles:{fillColor:[26,58,107]}, styles:{fontSize:9,cellPadding:4}, margin:{left:40,right:40} });
+
+  doc.autoTable({ startY: doc.lastAutoTable.finalY+16,
+    head:[['Pho diem','0-20','21-40','41-60','61-80','81-100']],
+    body:[['So thi sinh', st.dist[0], st.dist[1], st.dist[2], st.dist[3], st.dist[4]]],
+    theme:'grid', headStyles:{fillColor:[26,58,107]}, styles:{fontSize:9,cellPadding:4}, margin:{left:40,right:40} });
+
+  doc.autoTable({ startY: doc.lastAutoTable.finalY+16,
+    head:[['#','Ho ten','Don vi','Diem','Cau dung','Vi pham']],
+    body: st.topScore.map(function(r,i){ return [i+1, _deaccent(r.name||''), _deaccent(r.unit||''), (r.score||0)+'%', (r.correct!=null?r.correct+'/'+r.totalQ:''), r.violations||0]; }),
+    didDrawPage:function(){}, theme:'striped', headStyles:{fillColor:[26,58,107]}, styles:{fontSize:8.5,cellPadding:3}, margin:{left:40,right:40} });
+  doc.setFontSize(10); doc.setFont(undefined,'bold');
+  // tiêu đề bảng top điểm (đặt phía trên bằng cách vẽ trước không tiện với autotable → thêm ghi chú)
+
+  doc.autoTable({ startY: doc.lastAutoTable.finalY+16,
+    head:[['#','Ho ten (Vi pham nhieu nhat)','Don vi','So lan','Diem']],
+    body: st.topViol.length ? st.topViol.map(function(r,i){ return [i+1, _deaccent(r.name||''), _deaccent(r.unit||''), r.violations||0, (r.score||0)+'%']; }) : [['','Khong co thi sinh vi pham','','','']],
+    theme:'striped', headStyles:{fillColor:[192,57,43]}, styles:{fontSize:8.5,cellPadding:3}, margin:{left:40,right:40} });
+
+  doc.autoTable({ startY: doc.lastAutoTable.finalY+16,
+    head:[['Ma cau','Noi dung','Luot thi','Dung','% Dung']],
+    body: st.qStats.map(function(q){ return [q.qid, _deaccent((q.content||'').substring(0,70)), q.attempts, q.correct, (q.rate==null?'Chua thi':q.rate+'%')]; }),
+    theme:'striped', headStyles:{fillColor:[26,58,107]}, styles:{fontSize:8,cellPadding:3},
+    columnStyles:{1:{cellWidth:230}}, margin:{left:40,right:40} });
+
+  doc.save(_tsName('BaoCao_ThongKe','pdf'));
+  toast('Đã xuất báo cáo PDF','success');
+  if (typeof addLog==='function') addLog('EXPORT','Xuất báo cáo thống kê PDF');
+}
+
+// ---------- PDF: tỷ lệ trả lời đúng ----------
+function exportQuestionPDF() {
+  var st = computeReportStats();
+  if (!st.qStats.length) { toast('Chưa có câu hỏi','error'); return; }
+  var doc = _getPdf(); if (!doc) return;
+  var W = doc.internal.pageSize.getWidth();
+  doc.setFontSize(14); doc.setFont(undefined,'bold');
+  doc.text('TY LE TRA LOI DUNG THEO CAU HOI', W/2, 40, {align:'center'});
+  doc.setFontSize(9); doc.setFont(undefined,'normal');
+  doc.text(_deaccent(st.cfg.examTitle||'Ky thi truc tuyen') + '  |  Xuat: ' + new Date().toLocaleString('vi-VN'), W/2, 56, {align:'center'});
+  doc.autoTable({ startY:72,
+    head:[['Ma cau','Noi dung','Chu de','Kho','Luot','Dung','Trong','% Dung']],
+    body: st.qStats.map(function(q){ return [q.qid, _deaccent((q.content||'').substring(0,60)), _deaccent(q.topic||''), _deaccent(q.level||''), q.attempts, q.correct, q.blank, (q.rate==null?'Chua thi':q.rate+'%')]; }),
+    theme:'striped', headStyles:{fillColor:[26,58,107]}, styles:{fontSize:8,cellPadding:3},
+    columnStyles:{1:{cellWidth:180}}, margin:{left:30,right:30} });
+  doc.save(_tsName('TyLeTraLoiDung','pdf'));
+  toast('Đã xuất PDF tỷ lệ trả lời đúng','success');
+  if (typeof addLog==='function') addLog('EXPORT','Xuất tỷ lệ trả lời đúng (PDF)');
+}
+
+// Bỏ dấu tiếng Việt để jsPDF (font mặc định) hiển thị đọc được
+function _deaccent(s) {
+  if (s==null) return '';
+  return String(s)
+    .replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g,'a')
+    .replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g,'e')
+    .replace(/ì|í|ị|ỉ|ĩ/g,'i')
+    .replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g,'o')
+    .replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g,'u')
+    .replace(/ỳ|ý|ỵ|ỷ|ỹ/g,'y')
+    .replace(/đ/g,'d')
+    .replace(/À|Á|Ạ|Ả|Ã|Â|Ầ|Ấ|Ậ|Ẩ|Ẫ|Ă|Ằ|Ắ|Ặ|Ẳ|Ẵ/g,'A')
+    .replace(/È|É|Ẹ|Ẻ|Ẽ|Ê|Ề|Ế|Ệ|Ể|Ễ/g,'E')
+    .replace(/Ì|Í|Ị|Ỉ|Ĩ/g,'I')
+    .replace(/Ò|Ó|Ọ|Ỏ|Õ|Ô|Ồ|Ố|Ộ|Ổ|Ỗ|Ơ|Ờ|Ớ|Ợ|Ở|Ỡ/g,'O')
+    .replace(/Ù|Ú|Ụ|Ủ|Ũ|Ư|Ừ|Ứ|Ự|Ử|Ữ/g,'U')
+    .replace(/Ỳ|Ý|Ỵ|Ỷ|Ỹ/g,'Y')
+    .replace(/Đ/g,'D');
 }
 
 // ── SETTINGS ──
