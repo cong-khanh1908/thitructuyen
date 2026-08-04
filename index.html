@@ -651,11 +651,24 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
         </div>
         <div class="col-6"><label class="fl">Thời gian (phút)</label><input class="fc" id="ec-time" type="number" value="30"></div>
         <div class="col-12">
-          <label class="fl">Cấu trúc đề (Chủ đề – Số câu)</label>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+            <label class="fl" style="margin:0">Cấu trúc đề (Chủ đề – Số câu)</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.85rem;font-weight:600;color:var(--primary);background:#eef3fb;padding:6px 12px;border-radius:8px;border:1px solid var(--border)">
+              <input type="checkbox" id="ec-nooverlap" onchange="recalcSRAvailability()" style="width:16px;height:16px;cursor:pointer">
+              <span><i class="fas fa-shuffle me-1"></i>Không trùng câu với các bộ đề đã tạo</span>
+            </label>
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:4px;font-size:.72rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.3px">
+            <div style="flex:2">Chủ đề</div>
+            <div style="flex:0 0 76px;text-align:center">Số câu thi</div>
+            <div id="ec-hdr-reserve" style="flex:0 0 76px;text-align:center;visibility:hidden">Giữ riêng</div>
+            <div style="flex:0 0 40px"></div>
+          </div>
           <div id="ec-struct"></div>
-          <button onclick="addSRow()" style="border:1.5px dashed var(--primary);color:var(--primary);background:transparent;border-radius:8px;padding:6px 14px;margin-top:8px;font-weight:600;cursor:pointer">
+          <button onclick="addSRow('', 10)" style="border:1.5px dashed var(--primary);color:var(--primary);background:transparent;border-radius:8px;padding:6px 14px;margin-top:8px;font-weight:600;cursor:pointer">
             <i class="fas fa-plus me-1"></i>Thêm chủ đề
           </button>
+          <p id="ec-nooverlap-hint" style="font-size:.78rem;color:var(--text-muted);margin:10px 0 0;line-height:1.5"><i class="fas fa-circle-info me-1"></i><b>Số câu thi</b>: số câu mỗi chủ đề đưa vào đề. Khi bật <b>chống trùng</b>, nhập thêm <b>Giữ riêng</b> = số câu dành riêng cho bộ này (nên ≥ số câu thi để đảo đề giữa các thí sinh); các bộ tạo sau sẽ chỉ lấy từ số câu còn lại.</p>
         </div>
       </div>
     </div>
@@ -940,6 +953,14 @@ function isValidDOB(str) {
 // (cfg.totalQ) hoặc toàn bộ ngân hàng.
 function buildExamQuestions(allQs, activeSet, cfg) {
   function shuffle(a){ return a.slice().sort(function(){ return Math.random()-0.5; }); }
+
+  // Nếu bộ đề có "pool" (danh sách câu đã GIỮ RIÊNG khi bật chống trùng),
+  // chỉ được rút câu từ pool này để đảm bảo không trùng với các bộ khác.
+  if (activeSet && activeSet.noOverlap && Array.isArray(activeSet.pool) && activeSet.pool.length) {
+    var poolSet = {};
+    activeSet.pool.forEach(function(id){ poolSet[id] = true; });
+    allQs = allQs.filter(function(q){ return poolSet[q.id]; });
+  }
 
   // Có cấu trúc phân bổ theo chủ đề
   if (activeSet && activeSet.structure && activeSet.structure.length) {
@@ -2234,7 +2255,10 @@ function pgExams() {
       cardsHtml += '<span style="background:var(--primary);color:white;padding:4px 12px;border-radius:8px;font-size:.8rem;font-weight:700">'+esc(s.name)+'</span>';
       cardsHtml += '</div>';
       cardsHtml += '<p style="font-size:.9rem;font-weight:600;margin-bottom:4px">'+esc(s.examTitle||s.name)+'</p>';
-      cardsHtml += '<p style="font-size:.82rem;color:var(--text-muted);margin-bottom:12px">'+s.examCount+' đề • '+s.timeLimit+' phút • '+s.totalQ+' câu</p>';
+      cardsHtml += '<p style="font-size:.82rem;color:var(--text-muted);margin-bottom:8px">'+s.examCount+' đề • '+s.timeLimit+' phút • '+s.totalQ+' câu</p>';
+      if (s.noOverlap) {
+        cardsHtml += '<div style="margin-bottom:10px"><span style="background:#eef3fb;color:var(--primary);padding:2px 10px;border-radius:20px;font-size:.7rem;font-weight:600;border:1px solid var(--border)"><i class="fas fa-shuffle me-1"></i>Không trùng · giữ riêng '+((s.pool&&s.pool.length)||0)+' câu</span></div>';
+      }
       cardsHtml += '<div style="display:flex;gap:6px;flex-wrap:wrap">'+struHtml+'</div>';
       cardsHtml += '<p style="font-size:.75rem;color:var(--text-muted);margin-top:12px;margin-bottom:12px">'+new Date(s.created).toLocaleDateString('vi-VN')+'</p>';
 
@@ -2287,30 +2311,125 @@ function pgExams() {
     '<div class="row g-3">' + cardsHtml + '</div>';
 }
 
+// ── TIỆN ÍCH: NGÂN HÀNG CÂU HỎI THEO CHỦ ĐỀ & CHỐNG TRÙNG GIỮA CÁC BỘ ĐỀ ──
+function normTopic(s){ return String(s==null?'':s).trim().toLowerCase(); }
+
+// Danh sách ID câu hỏi theo từng chủ đề (map: normTopic -> [id,...])
+function questionsByTopic() {
+  var qs = DB.get('questions') || [];
+  var map = {};
+  qs.forEach(function(q){
+    var k = normTopic(q.topic);
+    (map[k] = map[k] || []).push(q.id);
+  });
+  return map;
+}
+
+// Tổng số câu khả dụng của một chủ đề trong ngân hàng
+function topicBankCount(topic) {
+  var map = questionsByTopic();
+  var arr = map[normTopic(topic)];
+  return arr ? arr.length : 0;
+}
+
+// Tập hợp các ID đã được các bộ đề khác GIỮ RIÊNG (reserve), bỏ qua bộ đang sửa (exceptId)
+function reservedQuestionIds(exceptId) {
+  var sets = DB.get('examsets') || [];
+  var used = {};
+  sets.forEach(function(s){
+    if (exceptId && s.id === exceptId) return;
+    (s.pool || []).forEach(function(id){ used[id] = true; });
+  });
+  return used;
+}
+
+// Số câu CÒN LẠI của một chủ đề nếu áp dụng chống trùng (loại các câu đã bị bộ khác giữ riêng)
+function topicAvailableCount(topic, exceptId) {
+  var map = questionsByTopic();
+  var arr = map[normTopic(topic)] || [];
+  var reserved = reservedQuestionIds(exceptId);
+  var n = 0;
+  arr.forEach(function(id){ if (!reserved[id]) n++; });
+  return n;
+}
+
 function openECModal() {
   document.getElementById('ec-name').value = 'Hội thi Điều dưỡng giỏi 2026';
   document.getElementById('ec-struct').innerHTML = '';
   S.srCnt = 0;
+  S.ecEditId = null; // đang tạo mới (không sửa bộ nào)
+  // Mặc định TẮT chống trùng
+  var noOv = document.getElementById('ec-nooverlap');
+  if (noOv) noOv.checked = false;
   addSRow('Điều dưỡng', 20);
   addSRow('BHYT', 10);
   addSRow('Tin học', 10);
+  recalcSRAvailability();
   document.getElementById('ec-modal').classList.add('show');
 }
 
-function addSRow(topic, count) {
+function ecNoOverlapOn() {
+  var el = document.getElementById('ec-nooverlap');
+  return !!(el && el.checked);
+}
+
+function addSRow(topic, count, reserve) {
   topic = topic || '';
-  count = count || 10;
+  count = (count == null) ? 10 : count;
   var id = 'sr-' + (S.srCnt++);
   var div = document.createElement('div');
   div.id = id;
-  div.style.cssText = 'display:flex;gap:8px;margin-bottom:8px;align-items:center';
+  div.className = 'sr-row';
+  div.style.cssText = 'display:flex;gap:8px;margin-bottom:6px;align-items:flex-start';
   var topics = getTopics();
   var opts = topics.map(function(t) { return '<option value="'+esc(t)+'"'+(t===topic?' selected':'')+'>'+esc(t)+'</option>'; }).join('');
+  var rsv = (reserve == null) ? count : reserve;
   div.innerHTML =
-    '<select class="fc" style="flex:2">'+opts+'</select>' +
-    '<input class="fc" type="number" style="flex:1;max-width:80px" value="'+count+'" placeholder="Số câu">' +
-    '<button style="border:none;background:var(--danger);color:white;border-radius:8px;padding:6px 10px;cursor:pointer;flex-shrink:0" data-sid="'+id+'" onclick="document.getElementById(this.getAttribute(\'data-sid\')).remove()"><i class="fas fa-times"></i></button>';
+    '<div style="flex:2;min-width:0">' +
+      '<select class="fc sr-topic" style="width:100%" onchange="recalcSRAvailability()">'+opts+'</select>' +
+      '<div class="sr-avail" style="font-size:.7rem;color:var(--text-muted);margin-top:3px;white-space:nowrap"></div>' +
+    '</div>' +
+    '<div style="flex:0 0 76px"><input class="fc sr-count" type="number" min="0" style="width:100%;text-align:center" value="'+count+'" placeholder="Thi" title="Số câu đưa vào đề thi" oninput="recalcSRAvailability()"></div>' +
+    '<div class="sr-reserve-wrap" style="flex:0 0 76px"><input class="fc sr-reserve" type="number" min="0" style="width:100%;text-align:center" value="'+rsv+'" placeholder="Giữ" title="Số câu GIỮ RIÊNG cho bộ đề này (chống trùng)" oninput="recalcSRAvailability()"></div>' +
+    '<button style="border:none;background:var(--danger);color:white;border-radius:8px;padding:8px 10px;cursor:pointer;flex-shrink:0;flex:0 0 auto" data-sid="'+id+'" onclick="var el=document.getElementById(this.getAttribute(\'data-sid\'));if(el)el.remove();recalcSRAvailability()"><i class="fas fa-times"></i></button>';
   document.getElementById('ec-struct').appendChild(div);
+  recalcSRAvailability();
+}
+
+// Cập nhật hiển thị số câu khả dụng theo từng chủ đề + hiện/ẩn cột "Giữ riêng" tùy chế độ
+function recalcSRAvailability() {
+  var on = ecNoOverlapOn();
+  var exceptId = S.ecEditId || null;
+  // Ẩn/hiện cột giữ riêng + header
+  var hdrRsv = document.getElementById('ec-hdr-reserve');
+  if (hdrRsv) hdrRsv.style.visibility = on ? 'visible' : 'hidden';
+  var rows = document.querySelectorAll('#ec-struct .sr-row');
+  rows.forEach(function(row){
+    var topic  = (row.querySelector('.sr-topic')||{}).value || '';
+    var count  = parseInt((row.querySelector('.sr-count')||{}).value, 10) || 0;
+    var rsvInp = row.querySelector('.sr-reserve');
+    var rsvWrap= row.querySelector('.sr-reserve-wrap');
+    var availEl= row.querySelector('.sr-avail');
+    if (rsvWrap) rsvWrap.style.display = on ? 'block' : 'none';
+
+    var bank = topicBankCount(topic);
+    if (!on) {
+      if (availEl) availEl.innerHTML = '<span style="color:var(--text-muted)">Ngân hàng: <b>'+bank+'</b> câu · lấy ngẫu nhiên</span>';
+      return;
+    }
+    var avail = topicAvailableCount(topic, exceptId); // câu chưa bị bộ khác giữ
+    var rsv = rsvInp ? (parseInt(rsvInp.value,10)||0) : count;
+    // Trạng thái cảnh báo
+    var warn = '';
+    if (rsv > avail) {
+      warn = '<span style="color:var(--danger);font-weight:600"> · thiếu '+(rsv-avail)+' câu!</span>';
+    } else if (count > rsv) {
+      warn = '<span style="color:var(--danger);font-weight:600"> · giữ &lt; số câu thi!</span>';
+    }
+    if (availEl) {
+      availEl.innerHTML = 'Còn lại: <b style="color:'+(avail<=0?'var(--danger)':'var(--success)')+'">'+avail+'</b>/'+bank+' câu'+warn;
+    }
+  });
 }
 
 function genExams() {
@@ -2318,29 +2437,65 @@ function genExams() {
   var cnt  = parseInt(document.getElementById('ec-cnt').value, 10);
   var time = parseInt(document.getElementById('ec-time').value, 10);
   if (!name) { toast('Vui lòng nhập tên kỳ thi!', 'error'); return; }
-  var rows = document.getElementById('ec-struct').children;
+
+  var noOverlap = ecNoOverlapOn();
+  var exceptId = S.ecEditId || null;
+  var rows = document.querySelectorAll('#ec-struct .sr-row');
   var structure = [];
+  var bad = false;
   Array.from(rows).forEach(function(row) {
-    var sel = row.querySelector('select');
-    var inp = row.querySelector('input');
-    var topic = sel ? sel.value : '';
-    var num   = inp ? parseInt(inp.value, 10) : 0;
-    if (topic && num > 0) structure.push({topic:topic, count:num});
+    var topic = (row.querySelector('.sr-topic')||{}).value || '';
+    var num   = parseInt((row.querySelector('.sr-count')||{}).value, 10) || 0;
+    var rsvEl = row.querySelector('.sr-reserve');
+    var rsv   = rsvEl ? (parseInt(rsvEl.value,10)||0) : num;
+    if (topic && num > 0) {
+      // Khi chống trùng: giữ riêng tối thiểu = số câu thi
+      var reserve = noOverlap ? Math.max(rsv, num) : num;
+      structure.push({topic:topic, count:num, reserve:reserve});
+    }
   });
+  if (!structure.length) { toast('Vui lòng thêm ít nhất một chủ đề với số câu > 0!', 'error'); return; }
+
+  // Nếu bật chống trùng: bốc thăm và GIỮ RIÊNG (reserve) danh sách ID câu cho bộ này
+  var pool = null;
+  if (noOverlap) {
+    var byTopic = questionsByTopic();
+    var reserved = reservedQuestionIds(exceptId); // các câu đã bị bộ khác giữ
+    pool = [];
+    var shortage = [];
+    for (var k=0; k<structure.length; k++) {
+      var st = structure[k];
+      var avail = (byTopic[normTopic(st.topic)] || []).filter(function(id){ return !reserved[id]; });
+      if (avail.length < st.reserve) {
+        shortage.push('• "'+st.topic+'": cần giữ '+st.reserve+' câu nhưng chỉ còn '+avail.length+' câu chưa dùng');
+      }
+      // xáo trộn rồi lấy đúng số câu giữ riêng (tối đa theo khả dụng)
+      avail = avail.slice().sort(function(){ return Math.random()-0.5; });
+      var take = Math.min(st.reserve, avail.length);
+      for (var m=0; m<take; m++) { pool.push(avail[m]); reserved[avail[m]] = true; }
+    }
+    if (shortage.length) {
+      toast('Không đủ câu hỏi chưa dùng để tạo bộ đề không trùng!', 'error');
+      alert('KHÔNG THỂ TẠO BỘ ĐỀ KHÔNG TRÙNG\n\nCác chủ đề sau không đủ câu hỏi chưa được bộ khác giữ riêng:\n\n'+shortage.join('\n')+'\n\nHãy giảm số câu giữ riêng, bổ sung câu hỏi vào ngân hàng, hoặc tắt chế độ chống trùng.');
+      return;
+    }
+  }
+
   var totalQ = structure.reduce(function(a,s){return a+s.count;},0);
   var sets = DB.get('examsets') || [];
   var newId = 'es_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
-  sets.push({ id:newId, name:name, examTitle:name, examCount:cnt, timeLimit:time, structure:structure, totalQ:totalQ, created:new Date().toISOString() });
+  var setObj = { id:newId, name:name, examTitle:name, examCount:cnt, timeLimit:time, structure:structure, totalQ:totalQ, noOverlap:noOverlap, created:new Date().toISOString() };
+  if (noOverlap && pool) setObj.pool = pool;
+  sets.push(setObj);
   DB.set('examsets', sets);
   var cfg = DB.get('config') || {};
   cfg.examTitle = name; cfg.timeLimit = time;
-  // Nếu chưa có bộ đề nào được kích hoạt → tự động kích hoạt bộ đề vừa tạo
   if (!cfg.activeSetId) cfg.activeSetId = newId;
   DB.set('config', cfg);
   closeM('ec-modal');
-  addLog('EXAM','Tạo bộ đề: '+name+', '+cnt+' đề, '+totalQ+' câu');
+  addLog('EXAM','Tạo bộ đề: '+name+', '+cnt+' đề, '+totalQ+' câu'+(noOverlap?' (chống trùng, giữ riêng '+((pool&&pool.length)||0)+' câu)':''));
   pgExams();
-  toast('Đã tạo bộ đề "'+name+'" thành công!','success');
+  toast('Đã tạo bộ đề "'+name+'"'+(noOverlap?' (không trùng câu)':'')+' thành công!','success');
 }
 
 function delExamSet(i) {
