@@ -988,10 +988,14 @@ function startExam() {
   var qs  = DB.get('questions') || [];
   if (!qs.length) { toast('Chưa có câu hỏi trong hệ thống!', 'error'); return; }
 
-  // Chọn "đề nguồn": ưu tiên bộ đề (examset) mới nhất do admin tạo, vì nó chứa
-  // cấu trúc phân bổ theo chủ đề + tổng số câu + thời gian đúng như cài đặt.
+  // Chọn "đề nguồn": CHỈ dùng bộ đề đang được admin KÍCH HOẠT.
+  // Bộ đề dự phòng / các bộ đề khác KHÔNG được phát cho thí sinh.
   var sets = DB.get('examsets') || [];
-  var activeSet = sets.length ? sets[sets.length - 1] : null;
+  var activeSet = getActiveExamSet();
+  if (!activeSet) {
+    toast('Chưa có bộ đề nào được kích hoạt. Vui lòng liên hệ quản trị viên!', 'error');
+    return;
+  }
 
   // Số phút: ưu tiên bộ đề, rồi tới cấu hình kỳ thi
   var minutes = (activeSet && activeSet.timeLimit) ? activeSet.timeLimit : (cfg.timeLimit || 30);
@@ -2130,34 +2134,156 @@ function importExcel() {
 }
 
 // ── EXAMS ──
-function pgExams() {
+// ── KÍCH HOẠT / DỰ PHÒNG BỘ ĐỀ ──
+// Đảm bảo mọi bộ đề đều có id ổn định (tương thích dữ liệu cũ chưa có id).
+function ensureExamSetIds() {
   var sets = DB.get('examsets') || [];
+  var changed = false;
+  sets.forEach(function(s, i) {
+    if (!s.id) { s.id = 'es_legacy_' + i + '_' + Math.random().toString(36).slice(2,7); changed = true; }
+  });
+  if (changed) DB.set('examsets', sets);
+  return sets;
+}
+
+// Trả về bộ đề đang được kích hoạt để làm đề thi cho thí sinh.
+// Ưu tiên: đúng activeSetId trong config → nếu không có/không hợp lệ thì null.
+function getActiveExamSet() {
+  var sets = ensureExamSetIds();
+  if (!sets.length) return null;
+  var cfg = DB.get('config') || {};
+  if (cfg.activeSetId) {
+    for (var i = 0; i < sets.length; i++) {
+      if (sets[i].id === cfg.activeSetId) return sets[i];
+    }
+  }
+  return null;
+}
+
+function activateExamSet(id) {
+  var sets = ensureExamSetIds();
+  var target = null;
+  sets.forEach(function(s) { if (s.id === id) target = s; });
+  if (!target) { toast('Không tìm thấy bộ đề!', 'error'); return; }
+  var cfg = DB.get('config') || {};
+  cfg.activeSetId = id;
+  // Bộ đề được kích hoạt không thể đồng thời là đề dự phòng
+  if (cfg.backupSetId === id) cfg.backupSetId = null;
+  // Đồng bộ tiêu đề & thời gian kỳ thi theo bộ đề đang chạy
+  cfg.examTitle = target.examTitle || target.name;
+  if (target.timeLimit) cfg.timeLimit = target.timeLimit;
+  DB.set('config', cfg);
+  addLog('EXAM', 'Kích hoạt bộ đề: ' + (target.name || id));
+  pgExams();
+  toast('Đã kích hoạt bộ đề "' + (target.name || '') + '" làm đề thi chính!', 'success');
+}
+
+function setBackupExamSet(id) {
+  var cfg = DB.get('config') || {};
+  if (cfg.backupSetId === id) {
+    // Bấm lần nữa → gỡ đánh dấu dự phòng
+    cfg.backupSetId = null;
+    DB.set('config', cfg);
+    addLog('EXAM', 'Gỡ đề dự phòng');
+    pgExams();
+    toast('Đã gỡ đánh dấu đề dự phòng.', 'success');
+    return;
+  }
+  if (cfg.activeSetId === id) {
+    toast('Bộ đề đang được kích hoạt không thể đặt làm dự phòng!', 'error');
+    return;
+  }
+  cfg.backupSetId = id;
+  DB.set('config', cfg);
+  var sets = ensureExamSetIds();
+  var t = null; sets.forEach(function(s){ if(s.id===id) t=s; });
+  addLog('EXAM', 'Đặt đề dự phòng: ' + ((t&&t.name)||id));
+  pgExams();
+  toast('Đã đặt "' + ((t&&t.name)||'') + '" làm đề dự phòng.', 'success');
+}
+
+function pgExams() {
+  var sets = ensureExamSetIds();
+  var cfgE = DB.get('config') || {};
+  var activeId = cfgE.activeSetId || null;
+  var backupId = cfgE.backupSetId || null;
   var cardsHtml = '';
   if (sets.length) {
     sets.forEach(function(s, i) {
+      var isActive = (s.id && s.id === activeId);
+      var isBackup = (s.id && s.id === backupId);
       var struHtml = '';
       (s.structure||[]).forEach(function(st) {
         struHtml += '<span style="background:#f1f5f9;padding:2px 8px;border-radius:6px;font-size:.75rem">'+esc(st.topic)+': '+st.count+'</span> ';
       });
-      cardsHtml += '<div class="col-12 col-md-6 col-lg-4"><div class="card-stat">';
-      cardsHtml += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
+
+      var cardStyle = 'position:relative;transition:box-shadow .2s;';
+      if (isActive)      cardStyle += 'border:2px solid var(--success);box-shadow:0 0 0 3px rgba(30,126,94,.12);';
+      else if (isBackup) cardStyle += 'border:2px dashed var(--accent);';
+      else               cardStyle += 'border:2px solid transparent;';
+
+      cardsHtml += '<div class="col-12 col-md-6 col-lg-4"><div class="card-stat" style="'+cardStyle+'">';
+
+      if (isActive) {
+        cardsHtml += '<div style="position:absolute;top:12px;right:12px;background:var(--success);color:#fff;padding:3px 10px;border-radius:20px;font-size:.7rem;font-weight:700;letter-spacing:.3px"><i class="fas fa-circle-check me-1"></i>ĐANG KÍCH HOẠT</div>';
+      } else if (isBackup) {
+        cardsHtml += '<div style="position:absolute;top:12px;right:12px;background:var(--accent);color:#fff;padding:3px 10px;border-radius:20px;font-size:.7rem;font-weight:700;letter-spacing:.3px"><i class="fas fa-life-ring me-1"></i>DỰ PHÒNG</div>';
+      }
+
+      cardsHtml += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;padding-right:'+((isActive||isBackup)?'120px':'0')+'">';
       cardsHtml += '<span style="background:var(--primary);color:white;padding:4px 12px;border-radius:8px;font-size:.8rem;font-weight:700">'+esc(s.name)+'</span>';
-      cardsHtml += '<button class="btn btn-sm btn-dc" style="border-radius:6px;padding:4px 10px" data-i="'+i+'" onclick="delExamSet(parseInt(this.getAttribute(\'data-i\'),10))"><i class="fas fa-trash"></i></button>';
       cardsHtml += '</div>';
       cardsHtml += '<p style="font-size:.9rem;font-weight:600;margin-bottom:4px">'+esc(s.examTitle||s.name)+'</p>';
       cardsHtml += '<p style="font-size:.82rem;color:var(--text-muted);margin-bottom:12px">'+s.examCount+' đề • '+s.timeLimit+' phút • '+s.totalQ+' câu</p>';
       cardsHtml += '<div style="display:flex;gap:6px;flex-wrap:wrap">'+struHtml+'</div>';
-      cardsHtml += '<p style="font-size:.75rem;color:var(--text-muted);margin-top:12px;margin-bottom:0">'+new Date(s.created).toLocaleDateString('vi-VN')+'</p>';
+      cardsHtml += '<p style="font-size:.75rem;color:var(--text-muted);margin-top:12px;margin-bottom:12px">'+new Date(s.created).toLocaleDateString('vi-VN')+'</p>';
+
+      cardsHtml += '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;border-top:1px solid var(--border);padding-top:12px">';
+      if (isActive) {
+        cardsHtml += '<button class="btn btn-sm" disabled style="border-radius:8px;padding:6px 12px;font-weight:600;background:var(--success);color:#fff;border:none;opacity:.85;cursor:default"><i class="fas fa-check me-1"></i>Đang thi</button>';
+      } else {
+        cardsHtml += '<button class="btn btn-sm" style="border-radius:8px;padding:6px 12px;font-weight:600;background:var(--success);color:#fff;border:none" data-id="'+esc(s.id)+'" onclick="activateExamSet(this.getAttribute(\'data-id\'))"><i class="fas fa-play me-1"></i>Kích hoạt</button>';
+      }
+      if (!isActive) {
+        var bkLabel = isBackup ? '<i class="fas fa-times me-1"></i>Bỏ dự phòng' : '<i class="fas fa-life-ring me-1"></i>Đặt dự phòng';
+        var bkStyle = isBackup ? 'background:var(--accent);color:#fff;border:none' : 'background:#fff;color:var(--accent-dark);border:1.5px solid var(--accent)';
+        cardsHtml += '<button class="btn btn-sm" style="border-radius:8px;padding:6px 12px;font-weight:600;'+bkStyle+'" data-id="'+esc(s.id)+'" onclick="setBackupExamSet(this.getAttribute(\'data-id\'))">'+bkLabel+'</button>';
+      }
+      cardsHtml += '<button class="btn btn-sm btn-dc" style="border-radius:8px;padding:6px 12px;margin-left:auto" data-i="'+i+'" onclick="delExamSet(parseInt(this.getAttribute(\'data-i\'),10))"><i class="fas fa-trash"></i></button>';
+      cardsHtml += '</div>';
+
       cardsHtml += '</div></div>';
     });
   } else {
     cardsHtml = '<div class="col-12"><div class="card-stat" style="text-align:center;padding:48px"><div style="font-size:3rem;margin-bottom:12px">📝</div><h5 style="color:var(--text-muted)">Chưa có bộ đề nào</h5><p style="color:var(--text-muted)">Nhấn "Sinh đề tự động" để tạo bộ đề mới</p></div></div>';
   }
+  // Banner tổng quan trạng thái kích hoạt
+  var activeSetObj = null, backupSetObj = null;
+  sets.forEach(function(s){ if(s.id===activeId) activeSetObj=s; if(s.id===backupId) backupSetObj=s; });
+  var bannerHtml = '';
+  if (sets.length) {
+    var actTxt = activeSetObj
+      ? '<span style="font-weight:700;color:var(--success)"><i class="fas fa-circle-check me-1"></i>'+esc(activeSetObj.name)+'</span> <span style="color:var(--text-muted);font-size:.85rem">('+activeSetObj.examCount+' đề • '+activeSetObj.timeLimit+' phút • '+activeSetObj.totalQ+' câu)</span>'
+      : '<span style="font-weight:700;color:var(--danger)"><i class="fas fa-triangle-exclamation me-1"></i>Chưa kích hoạt bộ đề nào</span> <span style="color:var(--text-muted);font-size:.85rem">— thí sinh chưa thể vào thi</span>';
+    var bkTxt = backupSetObj
+      ? '<span style="font-weight:600;color:var(--accent-dark)"><i class="fas fa-life-ring me-1"></i>'+esc(backupSetObj.name)+'</span>'
+      : '<span style="color:var(--text-muted)">Chưa đặt</span>';
+    bannerHtml =
+      '<div style="background:var(--card-bg);border:1px solid var(--border);border-left:4px solid '+(activeSetObj?'var(--success)':'var(--danger)')+';border-radius:12px;padding:16px 18px;margin-bottom:18px">' +
+        '<div style="display:flex;flex-wrap:wrap;gap:20px 40px">' +
+          '<div><div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);font-weight:700;margin-bottom:4px">Đề thi đang kích hoạt</div>'+actTxt+'</div>' +
+          '<div><div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);font-weight:700;margin-bottom:4px">Đề dự phòng</div>'+bkTxt+'</div>' +
+        '</div>' +
+        '<p style="margin:12px 0 0;font-size:.8rem;color:var(--text-muted)"><i class="fas fa-circle-info me-1"></i>Chỉ bộ đề <b>ĐANG KÍCH HOẠT</b> mới được dùng làm đề thi cho thí sinh. Đề dự phòng chỉ ở chế độ chờ, không phát cho thí sinh.</p>' +
+      '</div>';
+  }
+
   document.getElementById('apc').innerHTML =
     '<div style="margin-bottom:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">' +
       '<div><h5 style="margin:0;font-weight:700">Bộ đề thi</h5><p style="margin:0;color:var(--text-muted);font-size:.85rem">'+sets.length+' bộ đề</p></div>' +
       '<button class="btn-acc" style="padding:10px 20px;border-radius:10px" onclick="openECModal()"><i class="fas fa-magic me-2"></i>Sinh đề tự động</button>' +
     '</div>' +
+    bannerHtml +
     '<div class="row g-3">' + cardsHtml + '</div>';
 }
 
@@ -2203,10 +2329,13 @@ function genExams() {
   });
   var totalQ = structure.reduce(function(a,s){return a+s.count;},0);
   var sets = DB.get('examsets') || [];
-  sets.push({ name:name, examTitle:name, examCount:cnt, timeLimit:time, structure:structure, totalQ:totalQ, created:new Date().toISOString() });
+  var newId = 'es_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+  sets.push({ id:newId, name:name, examTitle:name, examCount:cnt, timeLimit:time, structure:structure, totalQ:totalQ, created:new Date().toISOString() });
   DB.set('examsets', sets);
   var cfg = DB.get('config') || {};
   cfg.examTitle = name; cfg.timeLimit = time;
+  // Nếu chưa có bộ đề nào được kích hoạt → tự động kích hoạt bộ đề vừa tạo
+  if (!cfg.activeSetId) cfg.activeSetId = newId;
   DB.set('config', cfg);
   closeM('ec-modal');
   addLog('EXAM','Tạo bộ đề: '+name+', '+cnt+' đề, '+totalQ+' câu');
@@ -2215,10 +2344,22 @@ function genExams() {
 }
 
 function delExamSet(i) {
-  if (!confirm('Xóa bộ đề này?')) return;
   var sets = DB.get('examsets')||[];
+  var removed = sets[i];
+  var wasActive = removed && DB.get('config') && (DB.get('config').activeSetId === removed.id);
+  var msg = wasActive
+    ? 'Bộ đề này ĐANG ĐƯỢC KÍCH HOẠT làm đề thi. Xóa sẽ khiến thí sinh không thể vào thi cho tới khi bạn kích hoạt bộ đề khác.\n\nBạn chắc chắn muốn xóa?'
+    : 'Xóa bộ đề này?';
+  if (!confirm(msg)) return;
   sets.splice(i,1); DB.set('examsets',sets);
-  addLog('EXAM','Xóa bộ đề'); pgExams(); toast('Đã xóa bộ đề','success');
+  // Dọn con trỏ kích hoạt / dự phòng nếu trỏ tới bộ đề vừa xóa
+  var cfg = DB.get('config') || {};
+  var changed = false;
+  if (removed && cfg.activeSetId === removed.id) { cfg.activeSetId = null; changed = true; }
+  if (removed && cfg.backupSetId === removed.id) { cfg.backupSetId = null; changed = true; }
+  if (changed) DB.set('config', cfg);
+  addLog('EXAM','Xóa bộ đề'+(wasActive?' (đang kích hoạt)':'')); pgExams();
+  toast(wasActive ? 'Đã xóa bộ đề đang kích hoạt. Hãy kích hoạt bộ đề khác!' : 'Đã xóa bộ đề', wasActive?'error':'success');
 }
 
 // ── CONFIG ──
