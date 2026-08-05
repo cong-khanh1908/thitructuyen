@@ -28,6 +28,15 @@ window.addEventListener('unhandledrejection', function(e) {
 <style>
 :root{--primary:#1a3a6b;--primary-light:#2756a8;--accent:#e8a020;--accent-dark:#c4860f;--success:#1e7e5e;--danger:#c0392b;--surface:#f5f7fb;--card-bg:#fff;--text:#1a1f2e;--text-muted:#6b7280;--border:#e2e8f0;--sidebar-w:260px}
 *{box-sizing:border-box}
+@keyframes rdspin{to{transform:rotate(360deg)}}
+.rd-chip{border:1.5px solid var(--border);background:#fff;color:var(--text-muted);border-radius:20px;padding:5px 14px;font-size:.8rem;font-weight:700;cursor:pointer;transition:all .18s;white-space:nowrap}
+.rd-chip:hover{border-color:var(--primary);color:var(--primary)}
+.rd-chip.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.rd-chip.on.ok{background:var(--success);border-color:var(--success)}
+.rd-chip.on.bad{background:var(--danger);border-color:var(--danger)}
+.rd-chip.on.blank{background:#6b7280;border-color:#6b7280}
+.rd-stat{background:rgba(255,255,255,.16);border-radius:12px;padding:8px 14px;min-width:74px}
+.rd-optrow{font-size:.85rem;padding:7px 10px;border-radius:8px;margin-bottom:4px;display:flex;align-items:center;gap:8px}
 body{font-family:'Segoe UI',sans-serif;background:var(--surface);color:var(--text);margin:0}
 .screen{display:none;min-height:100vh;min-height:100dvh}
 .screen.active{display:flex;flex-direction:column}
@@ -598,7 +607,7 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
 
 <!-- ══ RESULT DETAIL MODAL ══ -->
 <div id="result-detail-modal" class="mc" style="z-index:1100">
-  <div class="mb" style="max-width:820px;max-height:90vh;display:flex;flex-direction:column">
+  <div class="mb" style="max-width:920px;max-height:92vh;display:flex;flex-direction:column">
     <div class="mh" style="flex-shrink:0">
       <h5 id="rd-title"><i class="fas fa-file-signature me-2"></i>Bài làm chi tiết</h5>
       <button onclick="closeM('result-detail-modal')" style="border:none;background:none;font-size:1.2rem;color:var(--text-muted)"><i class="fas fa-times"></i></button>
@@ -2963,10 +2972,11 @@ function pgResults() {
       var sc = r.score>=70?'var(--success)':'var(--danger)';
       var vi = r.violations>0?'<span style="color:var(--danger);font-weight:700">'+r.violations+'</span>':'<span style="color:var(--success)">0</span>';
       var hasDetail = r.details && r.details.length;
+      var srcTag = r.fromSheet ? ' <i class="fas fa-cloud" title="Kết quả đồng bộ từ Google Sheet (thí sinh thi trên thiết bị khác)" style="color:#94a3b8;font-size:.72rem"></i>' : '';
       var submitDisp = r.timeText ? esc(r.timeText) : (function(){ var d=new Date(r.time); return isNaN(d.getTime())?'—':d.toLocaleString('vi-VN'); })();
       var idAttr = String(r.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
       rowsHtml += '<tr>';
-      rowsHtml += '<td><strong>'+esc(r.name)+'</strong></td><td>'+esc(r.dob)+'</td><td>'+esc(r.unit)+'</td><td>'+esc(r.phone)+'</td>';
+      rowsHtml += '<td><strong>'+esc(r.name)+'</strong>'+srcTag+'</td><td>'+esc(r.dob)+'</td><td>'+esc(r.unit)+'</td><td>'+esc(r.phone)+'</td>';
       rowsHtml += '<td><code style="background:#f1f5f9;padding:2px 8px;border-radius:6px;font-size:.8rem">'+esc(r.examCode)+'</code></td>';
       rowsHtml += '<td><strong style="color:'+sc+'">'+r.score+'%</strong></td>';
       rowsHtml += '<td>'+r.correct+'/'+r.totalQ+'</td><td>'+esc(r.timeUsed||'')+'</td><td>'+vi+'</td>';
@@ -2977,7 +2987,7 @@ function pgResults() {
             '<button class="btn btn-sm" style="background:var(--primary);color:#fff;border-radius:8px;font-weight:600;padding:4px 12px" onclick="viewResultDetail(\''+idAttr+'\')"><i class="fas fa-eye me-1"></i>Chi tiết</button>' +
             '<button class="btn btn-sm" style="background:var(--danger);color:#fff;border-radius:8px;font-weight:600;padding:4px 12px" onclick="exportSingleDetailPDF(\''+idAttr+'\')" title="Xuất phiếu làm bài PDF"><i class="fas fa-file-pdf me-1"></i>PDF</button>' +
             '</div>'
-          : '<span style="font-size:.75rem;color:var(--text-muted)">Không có</span>') +
+          : '<button class="btn btn-sm" style="background:#fff;color:var(--primary);border:1.5px solid var(--primary);border-radius:8px;font-weight:600;padding:4px 12px;font-size:.78rem" onclick="loadDetailForResult(\''+idAttr+'\', true)" title="Lấy bài làm chi tiết từ Google Sheet"><i class="fas fa-cloud-download-alt me-1"></i>Tải chi tiết</button>') +
         '</td>';
       rowsHtml += '</tr>';
     });
@@ -2992,7 +3002,7 @@ function pgResults() {
           '<i class="fas fa-search" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:.8rem"></i>' +
           '<input id="res-search" type="text" placeholder="Tìm tên / đơn vị / mã đề..." value="'+esc(RES_FILTER)+'" oninput="onResSearch(this.value)" style="border:1.5px solid var(--border);border-radius:8px;padding:7px 12px 7px 32px;font-size:.85rem;width:230px">' +
         '</div>' +
-        '<button onclick="refreshResultsFromSheet(true)" class="btn btn-sm btn-outline-secondary" style="border-radius:8px;font-weight:600" id="btn-pullres"><i class="fas fa-cloud-download-alt me-1"></i>Tải kết quả từ Sheet</button>' +
+        '<button onclick="refreshResultsFromSheet(true)" class="btn btn-sm btn-outline-secondary" style="border-radius:8px;font-weight:600" id="btn-pullres" title="Tải kết quả + bài làm chi tiết của thí sinh thi trên thiết bị khác"><i class="fas fa-cloud-download-alt me-1"></i>Tải kết quả + bài làm</button>' +
         '<button onclick="exportXLSX()" class="btn btn-sm btn-outline-secondary" style="border-radius:8px;font-weight:600"><i class="fas fa-file-excel me-1"></i>Xuất tổng hợp</button>' +
         '<button onclick="exportDetailXLSX()" class="btn btn-sm btn-acc" style="border-radius:8px;padding:6px 14px"><i class="fas fa-file-lines me-1"></i>Xuất chi tiết</button>' +
         '<button onclick="clearResults()" class="btn btn-sm btn-dc" style="border-radius:8px"><i class="fas fa-trash me-1"></i>Xóa tất cả</button>' +
@@ -3013,75 +3023,241 @@ function onResSearch(v) {
   }, 250);
 }
 
-// ── XEM CHI TIẾT BÀI LÀM CỦA 1 THÍ SINH ──
-function viewResultDetail(id) {
+// ── XEM CHI TIẾT BÀI LÀM CỦA 1 THÍ SINH ───────────────────────────────────
+// Hoạt động với CẢ hai nguồn dữ liệu:
+//   • Bài thi làm ngay trên máy admin  → chi tiết nằm sẵn trong localStorage
+//   • Bài thi làm trên điện thoại/máy khác → chi tiết được kéo về từ tab
+//     "ChiTiet" của Google Sheet rồi dựng lại y như bản gốc.
+var _RD = { id:null, filter:'all', kw:'' };
+
+function findResultById(id) {
   var results = DB.get('results') || [];
-  var r = results.filter(function(x){ return String(x.id) === String(id); })[0];
+  for (var i = 0; i < results.length; i++) {
+    if (String(results[i].id) === String(id)) return results[i];
+  }
+  return null;
+}
+
+function rdOpen()  { document.getElementById('result-detail-modal').classList.add('show'); }
+function rdTitle(t){ document.getElementById('rd-title').innerHTML = t; }
+
+// Lấy chi tiết 1 bài làm từ Google Sheet theo yêu cầu (nút "Tải chi tiết")
+function loadDetailForResult(id, openAfter) {
+  var r0 = findResultById(id);
+  if (!r0) { toast('Không tìm thấy kết quả!','error'); return Promise.resolve(); }
+  var cfg = DB.get('config') || {};
+  var detTab = cfg.detailSheetName || 'ChiTiet';
+  if (openAfter) { _RD.id = String(id); _RD.filter='all'; _RD.kw=''; rdShowLoading(r0); rdOpen(); }
+  else toast('Đang lấy bài làm chi tiết từ Google Sheet…','info');
+
+  return pullResultsFromSheet({ force:true }).then(function(){
+    var r = findResultById(id);
+    if (S.screen === 'admin' && document.getElementById('res-search')) { try { pgResults(); } catch(e){} }
+    if (r && r.details && r.details.length) {
+      if (openAfter) { rdRender(r); rdOpen(); }
+      else toast('✅ Đã tải bài làm chi tiết của '+r.name+'!','success');
+    } else {
+      if (openAfter) rdShowEmpty(r0, detTab);
+      else toast('Chưa tìm thấy bài làm trong tab "'+detTab+'" của Google Sheet.','error');
+    }
+  }).catch(function(){
+    if (openAfter) rdShowEmpty(r0, detTab);
+    else toast('Không kết nối được tới Google Sheet.','error');
+  });
+}
+
+function rdShowLoading(r) {
+  rdTitle('<i class="fas fa-file-signature me-2"></i>Bài làm chi tiết');
+  document.getElementById('rd-body').innerHTML =
+    '<div style="text-align:center;padding:52px 20px">' +
+      '<div style="width:46px;height:46px;border:4px solid #e2e8f0;border-top-color:var(--primary);border-radius:50%;margin:0 auto 16px;animation:rdspin .8s linear infinite"></div>' +
+      '<div style="font-weight:800;color:var(--primary)">Đang tải bài làm từ Google Sheet…</div>' +
+      '<div style="font-size:.85rem;color:var(--text-muted);margin-top:6px">'+esc(r.name)+' · Mã đề '+esc(r.examCode)+'</div>' +
+    '</div>';
+}
+
+function rdShowEmpty(r, detTab) {
+  rdTitle('<i class="fas fa-file-signature me-2"></i>Bài làm chi tiết');
+  document.getElementById('rd-body').innerHTML =
+    '<div style="text-align:center;padding:28px 18px">' +
+      '<i class="fas fa-cloud-arrow-down" style="font-size:2.4rem;color:#cbd5e1"></i>' +
+      '<div style="font-weight:800;color:var(--primary);margin-top:12px">Chưa lấy được bài làm chi tiết của '+esc(r.name)+'</div>' +
+      '<div style="text-align:left;max-width:560px;margin:14px auto 0;background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px 16px;font-size:.85rem;line-height:1.7;color:#7c2d12">' +
+        '<strong>Kiểm tra lần lượt:</strong>' +
+        '<ol style="margin:8px 0 0;padding-left:20px">' +
+          '<li>Google Sheet đã có tab <strong>'+esc(detTab)+'</strong> và trong đó có dòng của thí sinh này chưa?</li>' +
+          '<li>Sheet đã chia sẻ <strong>“Bất kỳ ai có liên kết – Người xem”</strong> chưa? (bắt buộc để trang admin đọc được)</li>' +
+          '<li>Bài này có được nộp <em>trước khi</em> nâng cấp không? Bản cũ chỉ ghi tổng hợp, không ghi chi tiết → không thể khôi phục.</li>' +
+          '<li>Tên tab chi tiết trong <strong>Cài đặt</strong> có khớp với tên tab thật trên Sheet không?</li>' +
+        '</ol>' +
+      '</div>' +
+      '<button class="btn btn-acc" style="border:none;border-radius:10px;padding:9px 18px;margin-top:16px" onclick="loadDetailForResult(\'' + String(r.id).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;') + '\', true)"><i class="fas fa-rotate me-1"></i>Thử tải lại</button>' +
+    '</div>';
+}
+
+function viewResultDetail(id) {
+  var r = findResultById(id);
   if (!r) { toast('Không tìm thấy kết quả!','error'); return; }
-  if (!r.details || !r.details.length) {
-    if (r.fromSheet) toast('Bài làm này được tải từ Google Sheet nên không có chi tiết từng câu tại đây. Xem tab "'+((DB.get('config')||{}).detailSheetName||'ChiTiet')+'" trong Google Sheet để có chi tiết đầy đủ.','info');
-    else toast('Kết quả này không có dữ liệu chi tiết!','error');
-    return;
+  _RD.id = String(id); _RD.filter = 'all'; _RD.kw = '';
+  if (!r.details || !r.details.length) { loadDetailForResult(id, true); return; }
+  rdRender(r);
+  rdOpen();
+}
+
+// ── Dựng giao diện phiếu bài làm ───────────────────────────────────────────
+function rdRender(r) {
+  var det = r.details || [];
+  var cfg = DB.get('config') || {};
+  var pass = (cfg.passScore != null ? cfg.passScore : 50);
+  var okCnt    = 0, wrongCnt = 0, blankCnt = 0, partial = false;
+  det.forEach(function(d){
+    if (!d.answered) blankCnt++;
+    else if (d.isOk) okCnt++;
+    else wrongCnt++;
+    if (d._partial) partial = true;
+  });
+  var scNum = Number(r.score) || 0;
+  var passed = scNum >= pass;
+  var submitDisp = r.timeText ? r.timeText : (function(){ var d = new Date(r.time); return isNaN(d.getTime()) ? '—' : d.toLocaleString('vi-VN'); })();
+  var srcLabel = r.fromSheet
+    ? '<span style="display:inline-block;margin-top:8px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);border-radius:20px;padding:3px 11px;font-size:.72rem;font-weight:700"><i class="fas fa-cloud me-1"></i>Đồng bộ từ Google Sheet</span>'
+    : '<span style="display:inline-block;margin-top:8px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);border-radius:20px;padding:3px 11px;font-size:.72rem;font-weight:700"><i class="fas fa-desktop me-1"></i>Làm bài trên thiết bị này</span>';
+
+  function stat(v, l, col) {
+    return '<div class="rd-stat"><div style="font-size:1.35rem;font-weight:800;color:'+col+'">'+v+'</div>' +
+           '<div style="font-size:.68rem;letter-spacing:.4px;opacity:.85">'+l+'</div></div>';
   }
 
-  var answeredCnt = r.details.filter(function(d){ return d.answered; }).length;
-  var blankCnt = r.details.length - answeredCnt;
-  var sc = r.score>=70?'var(--success)':'var(--danger)';
-
   var head =
-    '<div style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;background:#f8fafc;border-radius:14px;padding:16px 20px;margin-bottom:18px">' +
-      '<div>' +
-        '<div style="font-weight:800;font-size:1.05rem;color:var(--primary)">'+esc(r.name)+'</div>' +
-        '<div style="font-size:.82rem;color:var(--text-muted);margin-top:2px">'+esc(r.unit)+' · '+esc(r.phone)+' · NS: '+r.dob+'</div>' +
-        '<div style="font-size:.82rem;color:var(--text-muted);margin-top:2px">Mã đề <strong>'+r.examCode+'</strong> · Nộp: '+new Date(r.time).toLocaleString('vi-VN')+'</div>' +
+    '<div style="background:linear-gradient(135deg,var(--primary),var(--primary-light));border-radius:16px;padding:18px 20px;color:#fff;margin-bottom:14px">' +
+      '<div style="display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;align-items:flex-start">' +
+        '<div style="min-width:230px">' +
+          '<div style="font-weight:800;font-size:1.18rem">'+esc(r.name)+'</div>' +
+          '<div style="font-size:.82rem;opacity:.92;margin-top:4px">'+esc(r.unit||'—')+' · '+esc(r.phone||'—')+' · NS: '+esc(r.dob||'—')+'</div>' +
+          '<div style="font-size:.82rem;opacity:.92;margin-top:2px">Mã đề <strong>'+esc(r.examCode)+'</strong> · Nộp lúc '+esc(submitDisp)+'</div>' +
+          srcLabel +
+        '</div>' +
+        '<div style="display:flex;gap:10px;text-align:center;flex-wrap:wrap">' +
+          stat(scNum+'%','ĐIỂM', passed ? '#86efac' : '#fca5a5') +
+          stat(okCnt,'ĐÚNG','#86efac') +
+          stat(wrongCnt,'SAI','#fca5a5') +
+          stat(blankCnt,'BỎ TRỐNG','#e2e8f0') +
+          stat(esc(r.timeUsed||'—'),'TG LÀM','#fff') +
+        '</div>' +
       '</div>' +
-      '<div style="display:flex;gap:20px;text-align:center">' +
-        '<div><div style="font-size:1.5rem;font-weight:800;color:'+sc+'">'+r.score+'%</div><div style="font-size:.72rem;color:var(--text-muted)">ĐIỂM</div></div>' +
-        '<div><div style="font-size:1.5rem;font-weight:800;color:var(--success)">'+r.correct+'</div><div style="font-size:.72rem;color:var(--text-muted)">CÂU ĐÚNG</div></div>' +
-        '<div><div style="font-size:1.5rem;font-weight:800;color:var(--danger)">'+(r.totalQ-r.correct)+'</div><div style="font-size:.72rem;color:var(--text-muted)">CÂU SAI</div></div>' +
-        '<div><div style="font-size:1.5rem;font-weight:800;color:var(--text)">'+r.timeUsed+'</div><div style="font-size:.72rem;color:var(--text-muted)">TG LÀM</div></div>' +
+    '</div>';
+
+  var banner = '';
+  if (r.violations) {
+    banner += '<div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:9px 14px;font-size:.83rem;font-weight:600;margin-bottom:10px">' +
+              '<i class="fas fa-triangle-exclamation me-1"></i>Thí sinh vi phạm quy chế '+r.violations+' lần (thoát khỏi màn hình thi).</div>';
+  }
+  if (partial) {
+    banner += '<div style="background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;border-radius:10px;padding:9px 14px;font-size:.83rem;line-height:1.6;margin-bottom:10px">' +
+              '<i class="fas fa-circle-info me-1"></i>Bài làm này được khôi phục từ Google Sheet ở <strong>định dạng cũ</strong> nên chỉ hiển thị được đáp án thí sinh chọn và đáp án đúng (không có đủ 4 phương án). ' +
+              'Các bài nộp từ nay sẽ hiển thị đầy đủ 100%.</div>';
+  }
+
+  var chips =
+    '<div class="rd-noprint" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">' +
+      '<button class="rd-chip" id="rd-chip-all"   onclick="rdSetFilter(\'all\')">Tất cả ('+det.length+')</button>' +
+      '<button class="rd-chip ok" id="rd-chip-ok" onclick="rdSetFilter(\'ok\')">Câu đúng ('+okCnt+')</button>' +
+      '<button class="rd-chip bad" id="rd-chip-bad" onclick="rdSetFilter(\'bad\')">Câu sai ('+wrongCnt+')</button>' +
+      '<button class="rd-chip blank" id="rd-chip-blank" onclick="rdSetFilter(\'blank\')">Bỏ trống ('+blankCnt+')</button>' +
+      '<div style="position:relative;margin-left:auto">' +
+        '<i class="fas fa-search" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:.78rem"></i>' +
+        '<input id="rd-search" type="text" placeholder="Tìm trong câu hỏi…" value="'+esc(_RD.kw)+'" oninput="rdSearchQ(this.value)" style="border:1.5px solid var(--border);border-radius:20px;padding:6px 12px 6px 30px;font-size:.82rem;width:210px">' +
       '</div>' +
-    '</div>' +
-    '<div style="font-size:.82rem;color:var(--text-muted);margin-bottom:14px">Đã trả lời <strong>'+answeredCnt+'</strong> câu' + (blankCnt?', bỏ trống <strong style="color:var(--danger)">'+blankCnt+'</strong> câu':'') + (r.violations?' · Vi phạm: <strong style="color:var(--danger)">'+r.violations+'</strong>':'') + '</div>';
+    '</div>';
 
-  var body = '';
-  r.details.forEach(function(d, i) {
-    var status, statusBg, bdr, bg;
-    if (!d.answered) { status='Bỏ trống'; statusBg='#6b7280'; bdr='#cbd5e1'; bg='#f8fafc'; }
-    else if (d.isOk)  { status='Đúng';    statusBg='var(--success)'; bdr='var(--success)'; bg='#f0fdf4'; }
-    else              { status='Sai';     statusBg='var(--danger)';  bdr='var(--danger)';  bg='#fef2f2'; }
+  rdTitle('<i class="fas fa-file-signature me-2"></i>Bài làm chi tiết — '+esc(r.name));
+  document.getElementById('rd-body').innerHTML = head + banner + chips + '<div id="rd-qlist"></div>';
 
-    body += '<div style="margin-bottom:14px;padding:16px;border-radius:12px;border:1px solid '+bdr+';background:'+bg+'">';
-    body += '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px">' +
-              '<p style="font-weight:600;margin:0;font-size:.9rem;flex:1">'+(i+1)+'. '+esc(d.content)+'</p>' +
-              '<span class="bl" style="background:'+statusBg+';color:#fff;white-space:nowrap">'+status+'</span>' +
-            '</div>';
-    d.options.forEach(function(o) {
-      var isCorrect = o.letter === d.correct;
-      var isUser = o.letter === d.userAns;
-      var optStyle = 'font-size:.85rem;padding:6px 10px;border-radius:8px;margin-bottom:4px;display:flex;align-items:center;gap:8px;';
-      var tag = '';
-      if (isCorrect) { optStyle += 'background:#d1fae5;font-weight:600;'; tag = '<span style="margin-left:auto;font-size:.72rem;color:var(--success);font-weight:700">ĐÁP ÁN ĐÚNG</span>'; }
-      if (isUser && !isCorrect) { optStyle += 'background:#fee2e2;'; tag = '<span style="margin-left:auto;font-size:.72rem;color:var(--danger);font-weight:700">THÍ SINH CHỌN</span>'; }
-      if (isUser && isCorrect) { tag = '<span style="margin-left:auto;font-size:.72rem;color:var(--success);font-weight:700">✓ THÍ SINH CHỌN ĐÚNG</span>'; }
-      body += '<div style="'+optStyle+'"><strong>'+o.letter+'.</strong> <span>'+esc(o.text)+'</span>'+tag+'</div>';
-    });
-    if (!d.answered) {
-      body += '<div style="font-size:.8rem;color:var(--text-muted);margin-top:6px;font-style:italic">Thí sinh không chọn đáp án nào.</div>';
-    }
-    body += '</div>';
-  });
-
-  document.getElementById('rd-title').innerHTML = '<i class="fas fa-file-signature me-2"></i>Bài làm chi tiết';
-  document.getElementById('rd-body').innerHTML = head + body;
-  // Gắn handler trực tiếp bằng closure để id (chuỗi từ Sheet hoặc số) luôn an toàn,
-  // tránh lỗi cú pháp khi nhúng id chứa dấu cách / ký tự đặc biệt vào onclick.
   var rid = r.id;
   var xlsxBtn = document.getElementById('rd-export-btn');
-  var pdfBtn = document.getElementById('rd-pdf-btn');
-  xlsxBtn.onclick = function(){ exportSingleDetailXLSX(rid); };
-  pdfBtn.onclick = function(){ exportSingleDetailPDF(rid); };
-  document.getElementById('result-detail-modal').classList.add('show');
+  var pdfBtn  = document.getElementById('rd-pdf-btn');
+  if (xlsxBtn) xlsxBtn.onclick = function(){ exportSingleDetailXLSX(rid); };
+  if (pdfBtn)  pdfBtn.onclick  = function(){ exportSingleDetailPDF(rid); };
+  rdApply();
+}
+
+function rdSetFilter(f) { _RD.filter = f; rdApply(); }
+
+var _RD_TMR = null;
+function rdSearchQ(v) {
+  _RD.kw = v;
+  if (_RD_TMR) clearTimeout(_RD_TMR);
+  _RD_TMR = setTimeout(rdApply, 200);
+}
+
+function rdApply() {
+  var r = findResultById(_RD.id);
+  if (!r) return;
+  var box = document.getElementById('rd-qlist');
+  if (!box) return;
+
+  ['all','ok','bad','blank'].forEach(function(f){
+    var el = document.getElementById('rd-chip-'+f);
+    if (el) { if (f === _RD.filter) el.classList.add('on'); else el.classList.remove('on'); }
+  });
+
+  var kw = (_RD.kw||'').trim().toLowerCase();
+  var html = '', shown = 0;
+  (r.details||[]).forEach(function(d, i){
+    var st = !d.answered ? 'blank' : (d.isOk ? 'ok' : 'bad');
+    if (_RD.filter !== 'all' && _RD.filter !== st) return;
+    if (kw) {
+      var hay = String(d.content||'').toLowerCase();
+      (d.options||[]).forEach(function(o){ hay += ' ' + String(o.text||'').toLowerCase(); });
+      if (hay.indexOf(kw) === -1) return;
+    }
+    shown++;
+    html += rdQuestionHtml(d, i);
+  });
+
+  if (!shown) {
+    html = '<div style="text-align:center;padding:34px;color:var(--text-muted);font-size:.9rem">Không có câu hỏi nào khớp bộ lọc.</div>';
+  }
+  box.innerHTML = html;
+}
+
+function rdQuestionHtml(d, i) {
+  var status, sBg, bdr, bg;
+  if (!d.answered)     { status='Bỏ trống'; sBg='#6b7280';          bdr='#cbd5e1';        bg='#f8fafc'; }
+  else if (d.isOk)     { status='Đúng';     sBg='var(--success)';   bdr='var(--success)'; bg='#f0fdf4'; }
+  else                 { status='Sai';      sBg='var(--danger)';    bdr='var(--danger)';  bg='#fef2f2'; }
+
+  var h = '<div style="margin-bottom:12px;padding:15px 16px;border-radius:12px;border:1px solid '+bdr+';background:'+bg+'">';
+  h += '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:10px">' +
+         '<p style="font-weight:600;margin:0;font-size:.9rem;flex:1;line-height:1.6">' +
+           '<span style="display:inline-block;min-width:26px;height:24px;line-height:24px;text-align:center;background:'+sBg+';color:#fff;border-radius:6px;font-size:.75rem;margin-right:8px">'+(i+1)+'</span>' +
+           esc(d.content) +
+         '</p>' +
+         '<span class="bl" style="background:'+sBg+';color:#fff;white-space:nowrap">'+status+'</span>' +
+       '</div>';
+
+  (d.options||[]).forEach(function(o){
+    var isCorrect = o.letter === d.correct;
+    var isUser    = o.letter === d.userAns;
+    var st = '', tag = '';
+    if (isCorrect) { st = 'background:#d1fae5;font-weight:600;'; tag = '<span style="margin-left:auto;font-size:.7rem;color:var(--success);font-weight:700;white-space:nowrap">ĐÁP ÁN ĐÚNG</span>'; }
+    if (isUser && !isCorrect) { st = 'background:#fee2e2;'; tag = '<span style="margin-left:auto;font-size:.7rem;color:var(--danger);font-weight:700;white-space:nowrap">THÍ SINH CHỌN</span>'; }
+    if (isUser && isCorrect)  { tag = '<span style="margin-left:auto;font-size:.7rem;color:var(--success);font-weight:700;white-space:nowrap">✓ THÍ SINH CHỌN ĐÚNG</span>'; }
+    h += '<div class="rd-optrow" style="'+st+'"><strong>'+esc(o.letter)+'.</strong><span style="flex:1">'+esc(o.text)+'</span>'+tag+'</div>';
+  });
+
+  if (!d.answered) {
+    h += '<div style="font-size:.79rem;color:var(--text-muted);margin-top:6px;font-style:italic">Thí sinh không chọn đáp án nào.</div>';
+  }
+  var meta = [];
+  if (d.topic) meta.push('Chủ đề: '+esc(d.topic));
+  if (d.level) meta.push('Mức độ: '+esc(d.level));
+  if (d.score != null && d.score !== '') meta.push('Điểm câu: '+d.score);
+  if (meta.length) {
+    h += '<div style="font-size:.72rem;color:var(--text-muted);margin-top:8px;border-top:1px dashed '+bdr+';padding-top:7px">'+meta.join(' · ')+'</div>';
+  }
+  h += '</div>';
+  return h;
 }
 
 // ── XUẤT EXCEL TỔNG HỢP (không đổi hành vi cũ) ──
@@ -3104,7 +3280,7 @@ function buildDetailRows(r) {
   var rows = [];
   (r.details || []).forEach(function(d, i) {
     var optMap = {};
-    d.options.forEach(function(o){ optMap[o.letter] = o.text; });
+    (d.options||[]).forEach(function(o){ optMap[o.letter] = o.text; });
     var userText = d.userAns ? (optMap[d.userAns] || '') : '';
     var corText  = d.correct ? (optMap[d.correct] || '') : '';
     var status = !d.answered ? 'Bỏ trống' : (d.isOk ? 'Đúng' : 'Sai');
@@ -3175,7 +3351,13 @@ function exportSingleDetailPDF(id) {
   var r = results.filter(function(x){ return String(x.id) === String(id); })[0];
   if (!r) { toast('Không tìm thấy kết quả!','error'); return; }
   if (!r.details || !r.details.length) {
-    toast('Kết quả này không có dữ liệu chi tiết để xuất phiếu!','error'); return;
+    toast('Đang lấy bài làm chi tiết từ Google Sheet…','info');
+    loadDetailForResult(id, false).then(function(){
+      var r2 = findResultById(id);
+      if (r2 && r2.details && r2.details.length) exportSingleDetailPDF(id);
+      else toast('Không tìm thấy bài làm chi tiết của thí sinh này trên Google Sheet.','error');
+    });
+    return;
   }
 
   var cfg = DB.get('config') || {};
@@ -4156,6 +4338,7 @@ var APPS_SCRIPT_CODE =
 '  var sh = ss.getSheetByName(name);\n' +
 '  if(!sh){ sh = ss.insertSheet(name); if(header) sh.appendRow(header); }\n' +
 '  else if(sh.getLastRow()===0 && header){ sh.appendRow(header); }\n' +
+'  if(header && header.length && sh.getLastColumn() < header.length){ sh.getRange(1,1,1,header.length).setValues([header]); }\n' +
 '  var startRow = sh.getLastRow()+1;\n' +
 '  var rng = sh.getRange(startRow, 1, rows.length, rows[0].length);\n' +
 '  rng.setNumberFormat("@");            // ep dinh dang van ban de khong bi doi thanh Ngay/So\n' +
@@ -4375,7 +4558,19 @@ function arrayBufferToB64url(buf) {
 
 // ── GOOGLE SHEETS: cấu trúc cột ────────────────────────────────────────────
 var GS_SUMMARY_HEADER = ['Thời gian nộp','Họ tên','Ngày sinh','Đơn vị','SĐT','Mã đề','Đúng/Tổng','Điểm','Thời gian làm','Vi phạm'];
-var GS_DETAIL_HEADER  = ['Thời gian nộp','Họ tên','Đơn vị','SĐT','Mã đề','Câu số','Nội dung câu hỏi','Đáp án chọn','Nội dung đáp án chọn','Đáp án đúng','Nội dung đáp án đúng','Kết quả','Điểm câu'];
+var GS_DETAIL_HEADER  = ['Thời gian nộp','Họ tên','Đơn vị','SĐT','Mã đề','Câu số','Nội dung câu hỏi','Đáp án chọn','Nội dung đáp án chọn','Đáp án đúng','Nội dung đáp án đúng','Kết quả','Điểm câu','Dữ liệu câu (JSON)'];
+
+// Nén toàn bộ phương án của 1 câu thành JSON (cột cuối tab ChiTiet) để admin
+// khôi phục được bài làm ĐẦY ĐỦ khi kéo dữ liệu về từ Google Sheet, kể cả khi
+// thí sinh làm bài trên điện thoại / máy khác.
+function gsEncodeQuestion(d) {
+  try {
+    return JSON.stringify({
+      o: (d.options||[]).map(function(o){ return { l:o.letter, t:o.text }; }),
+      tp: d.topic||'', lv: d.level||'', qi: d.qid||''
+    });
+  } catch(e) { return ''; }
+}
 
 // Tạo mảng dòng tổng hợp (1 dòng) từ 1 kết quả
 function gsSummaryRow(result) {
@@ -4402,7 +4597,8 @@ function gsDetailRows(result) {
       i+1, d.content,
       d.userAns || '', userText,
       d.correct || '', corText,
-      status, d.score != null ? d.score : ''
+      status, d.score != null ? d.score : '',
+      gsEncodeQuestion(d)
     ]);
   });
   return rows;
@@ -4425,94 +4621,225 @@ function parseVnDateTime(s) {
   return isNaN(dt.getTime()) ? null : dt;
 }
 
-// ── Đọc kết quả (tổng hợp) từ Google Sheet về cho admin xem ──────────────────
-// Dùng đường công khai (GViz) nên admin không cần thao tác gì thêm ngoài việc
-// Sheet đã ở chế độ "Bất kỳ ai có liên kết – Người xem". Trả về Promise<count>.
-function pullResultsFromSheet(opts) {
-  opts = opts || {};
-  if (_suppressResultPull && !opts.force) return Promise.resolve(0);
-  var c = DB.get('config') || {};
-  var sheetId = c.sheetId || DB.get(SYNC_LS_ID);
-  var tab = c.sheetName || 'KetQua';
-  if (!sheetId) return Promise.resolve(0);
+// ── GVIZ: các hàm đọc ô dùng chung ─────────────────────────────────────────
+// GViz trả ô Ngày/Giờ dạng cell.v = "Date(2026,6,30,14,14,25)" (tháng 0-based)
+// còn cell.f là chuỗi đã format. Ưu tiên cell.f, nếu không có thì dựng từ Date().
+function gvCellStr(cell) {
+  if (!cell) return '';
+  if (cell.f != null && String(cell.f).trim() !== '') return String(cell.f);
+  if (cell.v == null) return '';
+  return String(cell.v);
+}
+function gvCellToDate(cell) {
+  if (!cell) return null;
+  var v = cell.v;
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v;
+  if (typeof v === 'string') {
+    var m = v.match(/^Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)$/);
+    if (m) return new Date(+m[1], +m[2], +m[3], +(m[4]||0), +(m[5]||0), +(m[6]||0));
+  }
+  return parseVnDateTime(gvCellStr(cell));
+}
+function gvNiceCell(cell, kind) {
+  var raw = gvCellStr(cell);
+  if (raw && raw.indexOf('Date(') !== 0) return raw;
+  var d = gvCellToDate(cell);
+  if (!d) return raw;
+  if (kind === 'date') return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear();
+  if (kind === 'time') return d.getHours()+':'+('0'+d.getMinutes()).slice(-2);
+  return d.toLocaleString('vi-VN');
+}
 
+// Tải toàn bộ dòng của 1 tab qua đường công khai GViz (Sheet để "Bất kỳ ai có
+// liên kết – Người xem"). Không cần Service Account nên chạy được trên GitHub Pages.
+function gsFetchTabRows(sheetId, tab) {
   var url = 'https://docs.google.com/spreadsheets/d/'+encodeURIComponent(sheetId)+
             '/gviz/tq?tqx=out:json&headers=1&sheet='+encodeURIComponent(tab)+'&_='+Date.now();
   return fetch(url, { cache: 'no-store' }).then(function(r){ return r.text(); }).then(function(txt){
     var json = extractGvizJson(txt);
-    if (!json) return 0;
-    var obj; try { obj = JSON.parse(json); } catch(e){ return 0; }
-    var rows = (obj.table && obj.table.rows) || [];
-    // Mỗi hàng: [Thời gian nộp, Họ tên, Ngày sinh, Đơn vị, SĐT, Mã đề, Đúng/Tổng, Điểm, TG làm, Vi phạm]
-    var fetched = [];
-    // Chuyển giá trị ô GViz thành chuỗi hiển thị đúng. GViz trả ô Ngày/Giờ dưới
-    // dạng cell.v = "Date(2026,6,30,14,14,25)" (tháng 0-based), còn cell.f là
-    // chuỗi đã format đẹp. Ta ưu tiên cell.f; nếu không có thì tự dựng từ Date().
-    function cellStr(cell) {
-      if (!cell) return '';
-      if (cell.f != null && String(cell.f).trim() !== '') return String(cell.f);
-      if (cell.v == null) return '';
-      return String(cell.v);
-    }
-    // Nếu ô là "Date(y,m,d,H,M,S)" (m 0-based) → Date thật; nếu là chuỗi
-    // "HH:MM:SS d/m/yyyy" do app tự ghi → cũng parse được. Trả về Date|null.
-    function cellToDate(cell) {
-      if (!cell) return null;
-      var v = cell.v;
-      if (typeof v === 'string') {
-        var m = v.match(/^Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+),(\d+))?\)$/);
-        if (m) {
-          return new Date(+m[1], +m[2], +m[3], +(m[4]||0), +(m[5]||0), +(m[6]||0));
-        }
+    if (!json) return [];
+    var obj; try { obj = JSON.parse(json); } catch(e){ return []; }
+    return (obj.table && obj.table.rows) || [];
+  }).catch(function(){ return []; });
+}
+
+// ── Khóa nhận dạng 1 bài làm: (thời điểm nộp | họ tên | mã đề) ──────────────
+// Chuẩn hóa mọi kiểu thời gian (Date, ISO, "HH:MM:SS d/m/yyyy") về mốc giây nên
+// dòng tổng hợp và dòng chi tiết trong Sheet luôn ghép được với nhau.
+function gsTimeKey(t) {
+  if (t instanceof Date) return isNaN(t.getTime()) ? '' : 'T'+Math.floor(t.getTime()/1000);
+  var str = String(t == null ? '' : t).trim();
+  if (!str) return '';
+  if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
+    var di = new Date(str);
+    if (!isNaN(di.getTime())) return 'T'+Math.floor(di.getTime()/1000);
+  }
+  var dv = parseVnDateTime(str);
+  if (dv) return 'T'+Math.floor(dv.getTime()/1000);
+  return 'S'+str;
+}
+function gsRowKey(timeAny, name, code) {
+  return gsTimeKey(timeAny) + '|' +
+         String(name||'').trim().toLowerCase() + '|' +
+         String(code||'').trim().toUpperCase();
+}
+
+// ── Dựng lại chi tiết từng câu từ các dòng của tab "ChiTiet" ────────────────
+// Cột: 0 TG nộp | 1 Họ tên | 2 Đơn vị | 3 SĐT | 4 Mã đề | 5 Câu số |
+//      6 Nội dung | 7 ĐA chọn | 8 Nội dung ĐA chọn | 9 ĐA đúng |
+//      10 Nội dung ĐA đúng | 11 Kết quả | 12 Điểm câu | 13 JSON phương án (mới)
+function gsParseDetailRows(rows) {
+  var groups = {};
+  (rows||[]).forEach(function(row){
+    var c = (row && row.c) || [];
+    function v(i){ return gvCellStr(c[i]); }
+    var name = v(1);
+    if (!name || name.indexOf('[GỬI THỬ]') > -1) return;
+    var code = v(4);
+    var when = gvCellToDate(c[0]);
+    var key  = gsRowKey(when || v(0), name, code);
+    var g = groups[key];
+    if (!g) { g = groups[key] = { name:name, code:code, time:when, items:[] }; }
+
+    var qNo     = parseInt(v(5), 10); if (isNaN(qNo)) qNo = g.items.length + 1;
+    var content = v(6);
+    var uL = (v(7)||'').trim().toUpperCase();
+    var uT = v(8);
+    var cL = (v(9)||'').trim().toUpperCase();
+    var cT = v(10);
+    var st = (v(11)||'').trim().toLowerCase();
+    var scNum = parseFloat(String(v(12)).replace(',', '.'));
+    if (isNaN(scNum)) scNum = null;
+
+    // Ưu tiên JSON đầy đủ (kết quả nộp từ bản nâng cấp này)
+    var opts = null, partial = true, topic = '', level = '';
+    // Quét cả hàng để tìm ô JSON (phòng khi Sheet cũ có số cột header khác)
+    var raw = v(13);
+    if (!raw || raw.charAt(0) !== '{') {
+      raw = '';
+      for (var ci = 12; ci < c.length; ci++) {
+        var cv = gvCellStr(c[ci]);
+        if (cv && cv.charAt(0) === '{' && cv.indexOf('"o"') > -1) { raw = cv; break; }
       }
-      // thử từ chuỗi hiển thị "HH:MM:SS d/m/yyyy" hoặc "d/m/yyyy HH:MM:SS"
-      var f = cellStr(cell);
-      var dt = parseVnDateTime(f);
-      return dt;
+    }
+    if (raw) {
+      try {
+        var pj = JSON.parse(raw);
+        if (pj && pj.o && pj.o.length) {
+          opts = pj.o.map(function(o){ return { letter:String(o.l||'').toUpperCase(), text:String(o.t==null?'':o.t) }; });
+          partial = false; topic = pj.tp||''; level = pj.lv||'';
+        }
+      } catch(e){}
+    }
+    // Không có JSON (dữ liệu cũ) → dựng tạm từ đáp án chọn + đáp án đúng
+    if (!opts) {
+      var map = {};
+      if (cL) map[cL] = cT || '';
+      if (uL && !(uL in map)) map[uL] = uT || '';
+      opts = Object.keys(map).sort().map(function(l){ return { letter:l, text:map[l] }; });
     }
 
-    // Chuẩn hóa một ô có thể là "Date(...)" thành chuỗi hiển thị hợp lý
-    function niceCell(cell, kind) {
-      var raw = cellStr(cell);
-      // nếu .f đã đẹp và không phải "Date(" thì dùng luôn
-      if (raw && raw.indexOf('Date(') !== 0) return raw;
-      var d = cellToDate(cell);
-      if (!d) return raw;
-      if (kind === 'date') return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear();
-      if (kind === 'time') { // TG làm lưu kiểu m:ss → GViz có thể coi là giờ:phút
-        return d.getHours()+':'+('0'+d.getMinutes()).slice(-2);
-      }
-      return raw;
-    }
+    var answered = uL ? (st ? st.indexOf('trống') === -1 : true) : false;
+    var isOk = st ? (st.indexOf('đúng') > -1) : (!!uL && uL === cL);
+    g.items.push({ no:qNo, d:{
+      content: content, options: opts,
+      correct: cL || null, userAns: uL || null,
+      answered: answered, isOk: !!isOk, score: scNum,
+      topic: topic, level: level, _partial: partial
+    }});
+  });
+
+  var out = {};
+  Object.keys(groups).forEach(function(k){
+    var g = groups[k];
+    g.items.sort(function(a,b){ return a.no - b.no; });
+    out[k] = { time:g.time, name:g.name, code:g.code,
+               details: g.items.map(function(x){ return x.d; }) };
+  });
+  return out;
+}
+
+// Tìm chi tiết phù hợp cho 1 kết quả: khớp chính xác theo khóa; nếu lệch định
+// dạng thời gian thì lùi về khớp theo (họ tên + mã đề) và chọn lần nộp gần nhất.
+function gsLookupDetails(map, r) {
+  if (!map) return null;
+  var k = gsRowKey(r.timeText || r.time, r.name, r.examCode);
+  if (map[k] && map[k].details.length) return map[k].details;
+  var k2 = gsRowKey(r.time, r.name, r.examCode);
+  if (map[k2] && map[k2].details.length) return map[k2].details;
+
+  var nm = String(r.name||'').trim().toLowerCase();
+  var cd = String(r.examCode||'').trim().toUpperCase();
+  var cands = [];
+  Object.keys(map).forEach(function(kk){
+    var g = map[kk];
+    if (!g.details.length) return;
+    if (String(g.name||'').trim().toLowerCase() === nm &&
+        String(g.code||'').trim().toUpperCase() === cd) cands.push(g);
+  });
+  if (!cands.length) return null;
+  if (cands.length === 1) return cands[0].details;
+  var t = new Date(r.time).getTime();
+  if (isNaN(t)) return cands[0].details;
+  cands.sort(function(a,b){
+    var ta = a.time ? a.time.getTime() : 0, tb = b.time ? b.time.getTime() : 0;
+    return Math.abs(ta - t) - Math.abs(tb - t);
+  });
+  return cands[0].details;
+}
+
+// ── Đọc kết quả (tổng hợp + CHI TIẾT) từ Google Sheet về cho admin xem ──────
+// Đây là mấu chốt giúp admin xem được bài làm của thí sinh đã thi trên thiết bị
+// khác: ngoài tab tổng hợp, hàm còn kéo tab chi tiết và gắn ngược vào từng kết
+// quả (kể cả những kết quả đã tải về trước đó nhưng còn thiếu chi tiết).
+var LAST_PULL_STATS = { added:0, updated:0 };
+
+function pullResultsFromSheet(opts) {
+  opts = opts || {};
+  LAST_PULL_STATS = { added:0, updated:0 };
+  if (_suppressResultPull && !opts.force) return Promise.resolve(0);
+  var c = DB.get('config') || {};
+  var sheetId = c.sheetId || DB.get(SYNC_LS_ID);
+  var sumTab = c.sheetName || 'KetQua';
+  var detTab = c.detailSheetName || 'ChiTiet';
+  if (!sheetId) return Promise.resolve(0);
+
+  // Chỉ tải tab chi tiết khi thực sự cần (đang thiếu chi tiết hoặc admin bấm tải)
+  var localNow = DB.get('results') || [];
+  var needDetail = !!opts.force || localNow.some(function(r){ return !r.details || !r.details.length; }) || localNow.length === 0;
+
+  return Promise.all([
+    gsFetchTabRows(sheetId, sumTab),
+    needDetail ? gsFetchTabRows(sheetId, detTab) : Promise.resolve([])
+  ]).then(function(res){
+    var rows = res[0] || [];
+    var detailMap = gsParseDetailRows(res[1] || []);
+    var fetched = [];
 
     rows.forEach(function(row){
       var c0 = (row && row.c) || [];
-      function val(i){ return cellStr(c0[i]); }
+      function val(i){ return gvCellStr(c0[i]); }
       var name = val(1);
-      if (!name || name.indexOf('[GỬI THỬ]') > -1) return; // bỏ dòng test
+      if (!name || name.indexOf('[GỬI THỬ]') > -1) return;
       var correctTotal = val(6).split('/');
-      // Điểm: có thể là "45%", "0.45" (bị Sheets đổi thành phần trăm), hoặc "45"
       var scoreStr = val(7).replace('%','').trim().replace(',', '.');
       var scoreNum = parseFloat(scoreStr);
       if (!isNaN(scoreNum) && scoreNum > 0 && scoreNum <= 1 && val(7).indexOf('%') === -1) scoreNum = scoreNum * 100;
-      // Thời gian nộp: dựng Date thật để lọc "1 giờ qua"; đồng thời giữ chuỗi hiển thị
-      var submitDate = cellToDate(c0[0]);
+      var submitDate = gvCellToDate(c0[0]);
       var timeISO = submitDate ? submitDate.toISOString() : val(0);
-      var timeDisp = niceCell(c0[0], 'datetime');
-      if (timeDisp.indexOf('Date(') === 0 && submitDate) {
-        timeDisp = submitDate.toLocaleString('vi-VN');
-      }
+      var timeDisp = gvNiceCell(c0[0], 'datetime');
+      if (timeDisp.indexOf('Date(') === 0 && submitDate) timeDisp = submitDate.toLocaleString('vi-VN');
 
       fetched.push({
         id: 'sheet:' + timeDisp + '|' + name + '|' + val(5),
-        time: timeISO,          // ISO chuẩn để new Date() luôn hợp lệ
-        timeText: timeDisp,     // chuỗi hiển thị gốc từ Sheet
-        name: name, dob: niceCell(c0[2], 'date'), unit: val(3), phone: val(4),
+        time: timeISO,
+        timeText: timeDisp,
+        name: name, dob: gvNiceCell(c0[2], 'date'), unit: val(3), phone: val(4),
         examCode: val(5),
         correct: parseInt(correctTotal[0], 10) || 0,
         totalQ: parseInt(correctTotal[1], 10) || 0,
         score: isNaN(scoreNum) ? 0 : Math.round(scoreNum * 100) / 100,
-        timeUsed: niceCell(c0[8], 'time'),
+        timeUsed: gvNiceCell(c0[8], 'time'),
         violations: parseInt(val(9), 10) || 0,
         details: [],
         fromSheet: true,
@@ -4520,24 +4847,45 @@ function pullResultsFromSheet(opts) {
       });
     });
 
-    // Gộp vào localStorage, tránh trùng: khóa theo (time|name|examCode)
+    // Gộp vào localStorage theo khóa chuẩn hóa (chống trùng dòng)
     var local = DB.get('results') || [];
-    var seen = {};
+    var byKey = {};
     local.forEach(function(r){
-      var key = (new Date(r.time).toLocaleString('vi-VN')) + '|' + r.name + '|' + r.examCode;
-      seen[key] = true;
-      var key2 = r.time + '|' + r.name + '|' + r.examCode; seen[key2] = true;
+      var k1 = gsRowKey(r.timeText || r.time, r.name, r.examCode);
+      if (!byKey[k1]) byKey[k1] = r;
+      var k2 = gsRowKey(r.time, r.name, r.examCode);
+      if (!byKey[k2]) byKey[k2] = r;
     });
-    var added = 0;
+
+    var added = 0, updated = 0;
     fetched.forEach(function(fr){
-      var key = fr.time + '|' + fr.name + '|' + fr.examCode;
-      if (!seen[key]) { local.push(fr); seen[key] = true; added++; }
+      var k = gsRowKey(fr.timeText || fr.time, fr.name, fr.examCode);
+      if (byKey[k]) return;
+      local.push(fr);
+      byKey[k] = fr;
+      byKey[gsRowKey(fr.time, fr.name, fr.examCode)] = fr;
+      added++;
     });
-    if (added > 0) {
+
+    // Bổ sung chi tiết cho MỌI kết quả còn thiếu (mới thêm lẫn đã có sẵn)
+    local.forEach(function(r){
+      if (r.details && r.details.length) return;
+      var d = gsLookupDetails(detailMap, r);
+      if (d && d.length) {
+        r.details = d;
+        r.detailFromSheet = true;
+        r.detailPartial = d.some(function(x){ return x._partial; });
+        if (!r.totalQ) r.totalQ = d.length;
+        updated++;
+      }
+    });
+
+    if (added > 0 || updated > 0) {
       DB._syncSuppress = true;
       try { DB.set('results', local); } finally { DB._syncSuppress = false; }
     }
-    return added;
+    LAST_PULL_STATS = { added: added, updated: updated };
+    return added + updated;
   }).catch(function(){ return 0; });
 }
 
@@ -4549,8 +4897,11 @@ function refreshResultsFromSheet(showToast) {
     if (typeof pgResults === 'function' && S.screen === 'admin') { try { pgResults(); } catch(e){} }
     if (typeof pgMonitor === 'function') { try { if (document.getElementById('mon-body')) pgMonitor(); } catch(e){} }
     if (showToast) {
-      if (added > 0) toast('✅ Đã tải '+added+' kết quả mới từ Google Sheet!','success');
-      else toast('Không có kết quả mới trên Google Sheet.','info');
+      var st = LAST_PULL_STATS || {added:0,updated:0};
+      if (st.added > 0 && st.updated > 0) toast('✅ Đã tải '+st.added+' kết quả mới và bổ sung chi tiết bài làm cho '+st.updated+' thí sinh!','success');
+      else if (st.added > 0) toast('✅ Đã tải '+st.added+' kết quả mới từ Google Sheet!','success');
+      else if (st.updated > 0) toast('✅ Đã tải chi tiết bài làm của '+st.updated+' thí sinh từ Google Sheet!','success');
+      else toast('Dữ liệu đã là mới nhất — không có kết quả nào cần cập nhật.','info');
     }
     return added;
   });
