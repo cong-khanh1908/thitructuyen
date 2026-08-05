@@ -98,6 +98,8 @@ tr.qs-row-selected:hover{background:#e0e7ff}
 .bh{background:#fee2e2;color:#991b1b}
 /* BUTTONS */
 .btn-acc{background:var(--accent);border:none;color:white;font-weight:600;border-radius:10px;transition:all .2s;cursor:pointer}
+.ex-btn{border:none;color:#fff;font-weight:600;border-radius:8px;padding:9px 16px;cursor:pointer;font-size:.85rem;display:inline-flex;align-items:center;gap:6px;transition:filter .15s}
+.ex-btn:hover{filter:brightness(1.08)}
 .btn-acc:hover{background:var(--accent-dark);color:white}
 .btn-dc{background:var(--danger);border:none;color:white;font-weight:600;border-radius:8px;cursor:pointer}
 /* EXAM TAKING */
@@ -675,6 +677,62 @@ select.fc{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns=
     <div class="mf">
       <button class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600" onclick="closeM('ec-modal')">Hủy</button>
       <button class="btn-acc" style="padding:10px 24px;border-radius:10px" onclick="genExams()"><i class="fas fa-magic me-1"></i>Sinh đề tự động</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL XUẤT / IN -->
+<div id="ex-modal" class="mc">
+  <div class="mb" style="max-width:640px">
+    <div class="mh">
+      <div>
+        <h5 id="ex-title" style="margin:0">Xuất / In</h5>
+        <p id="ex-sub" style="margin:4px 0 0;font-size:.82rem;color:var(--text-muted)"></p>
+      </div>
+      <button onclick="closeExportModal()" style="border:none;background:none;font-size:1.2rem;color:var(--text-muted)"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="mbd">
+      <!-- Khối 1: Ngân hàng câu hỏi -->
+      <div style="border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <div style="width:38px;height:38px;border-radius:10px;background:#eef3fb;display:flex;align-items:center;justify-content:center;color:var(--primary)"><i class="fas fa-database"></i></div>
+          <div><div style="font-weight:700">Danh sách câu hỏi theo chủ đề</div><div style="font-size:.78rem;color:var(--text-muted)">Toàn bộ câu hỏi đang được chọn cho bộ đề, nhóm theo chủ đề</div></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.88rem;margin:10px 0 12px">
+          <input type="checkbox" id="ex-bank-answer" style="width:16px;height:16px;cursor:pointer">
+          <span>Kèm đáp án đúng của mỗi câu</span>
+        </label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="ex-btn" style="background:#2b579a" onclick="doExport('bank','doc')"><i class="fas fa-file-word"></i> Word</button>
+          <button class="ex-btn" style="background:#1d7044" onclick="doExport('bank','xlsx')"><i class="fas fa-file-excel"></i> Excel</button>
+          <button class="ex-btn" style="background:#c0392b" onclick="doExport('bank','pdf')"><i class="fas fa-file-pdf"></i> PDF</button>
+        </div>
+      </div>
+
+      <!-- Khối 2: Đề thi theo mã -->
+      <div style="border:1px solid var(--border);border-radius:12px;padding:16px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <div style="width:38px;height:38px;border-radius:10px;background:#fef3e2;display:flex;align-items:center;justify-content:center;color:var(--accent-dark)"><i class="fas fa-file-lines"></i></div>
+          <div><div style="font-weight:700">Đề thi hoàn chỉnh theo từng mã đề</div><div style="font-size:.78rem;color:var(--text-muted)">Mẫu đề thi trên giấy cho thí sinh — mỗi mã một đề riêng</div></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.88rem;margin:10px 0 6px">
+          <input type="checkbox" id="ex-paper-shuffle" checked style="width:16px;height:16px;cursor:pointer">
+          <span>Đảo thứ tự phương án A/B/C/D giữa các mã đề</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.88rem;margin:0 0 12px">
+          <input type="checkbox" id="ex-paper-answer" style="width:16px;height:16px;cursor:pointer">
+          <span>In kèm đáp án tương ứng của từng mã đề</span>
+        </label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="ex-btn" style="background:#2b579a" onclick="doExport('paper','doc')"><i class="fas fa-file-word"></i> Word</button>
+          <button class="ex-btn" style="background:#1d7044" onclick="doExport('paper','xlsx')"><i class="fas fa-file-excel"></i> Excel</button>
+          <button class="ex-btn" style="background:#c0392b" onclick="doExport('paper','pdf')"><i class="fas fa-file-pdf"></i> PDF</button>
+        </div>
+        <p style="font-size:.75rem;color:var(--text-muted);margin:12px 0 0"><i class="fas fa-circle-info me-1"></i>PDF mở ở cửa sổ in để giữ đúng dấu tiếng Việt — chọn <b>Lưu dạng PDF</b> trong hộp thoại in.</p>
+      </div>
+    </div>
+    <div class="mf">
+      <button class="btn btn-outline-secondary" style="border-radius:10px;font-weight:600" onclick="closeExportModal()">Đóng</button>
     </div>
   </div>
 </div>
@@ -2273,7 +2331,8 @@ function pgExams() {
         var bkStyle = isBackup ? 'background:var(--accent);color:#fff;border:none' : 'background:#fff;color:var(--accent-dark);border:1.5px solid var(--accent)';
         cardsHtml += '<button class="btn btn-sm" style="border-radius:8px;padding:6px 12px;font-weight:600;'+bkStyle+'" data-id="'+esc(s.id)+'" onclick="setBackupExamSet(this.getAttribute(\'data-id\'))">'+bkLabel+'</button>';
       }
-      cardsHtml += '<button class="btn btn-sm btn-dc" style="border-radius:8px;padding:6px 12px;margin-left:auto" data-i="'+i+'" onclick="delExamSet(parseInt(this.getAttribute(\'data-i\'),10))"><i class="fas fa-trash"></i></button>';
+      cardsHtml += '<button class="btn btn-sm" style="border-radius:8px;padding:6px 12px;font-weight:600;background:#fff;color:var(--primary);border:1.5px solid var(--primary);margin-left:auto" data-id="'+esc(s.id)+'" onclick="openExportModal(this.getAttribute(\'data-id\'))"><i class="fas fa-download me-1"></i>Xuất / In</button>';
+      cardsHtml += '<button class="btn btn-sm btn-dc" style="border-radius:8px;padding:6px 12px" data-i="'+i+'" onclick="delExamSet(parseInt(this.getAttribute(\'data-i\'),10))"><i class="fas fa-trash"></i></button>';
       cardsHtml += '</div>';
 
       cardsHtml += '</div></div>';
@@ -5434,6 +5493,379 @@ function copySheetId() {
     var ta = document.createElement('textarea'); ta.value = id; document.body.appendChild(ta);
     ta.select(); try { document.execCommand('copy'); toast('Đã sao chép Spreadsheet ID!','success'); } catch(e){}
     document.body.removeChild(ta);
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// XUẤT / IN NGÂN HÀNG CÂU HỎI & ĐỀ THI THEO MÃ  (Word / Excel / PDF)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Tìm bộ đề theo id
+function _findSet(id){
+  var sets = ensureExamSetIds();
+  for (var i=0;i<sets.length;i++) if (sets[i].id===id) return sets[i];
+  return null;
+}
+
+// Nhãn A/B/C/D
+var _OPT_LETTERS = ['A','B','C','D'];
+function _optOf(q, letter){
+  return letter==='A'?q.a : letter==='B'?q.b : letter==='C'?q.c : q.d;
+}
+
+// Lấy TOÀN BỘ câu hỏi thuộc "bộ đề" để xuất ngân hàng, nhóm theo chủ đề.
+// - Nếu bộ có pool (chống trùng): chỉ các câu đã giữ riêng.
+// - Nếu không: toàn bộ câu trong ngân hàng thuộc các chủ đề của cấu trúc.
+// Trả về: [{topic, count(theo cấu trúc), questions:[q,...]}]
+function getSetBankByTopic(set){
+  var allQs = DB.get('questions') || [];
+  var byId = {}; allQs.forEach(function(q){ byId[q.id]=q; });
+  var poolSet = null;
+  if (set.noOverlap && Array.isArray(set.pool) && set.pool.length){
+    poolSet = {}; set.pool.forEach(function(id){ poolSet[id]=true; });
+  }
+  var groups = [];
+  (set.structure||[]).forEach(function(st){
+    var qs = allQs.filter(function(q){
+      if (normTopic(q.topic)!==normTopic(st.topic)) return false;
+      if (poolSet) return !!poolSet[q.id];
+      return true;
+    });
+    groups.push({ topic: st.topic, count: st.count||0, questions: qs });
+  });
+  return groups;
+}
+
+// Đếm tổng số câu trong ngân hàng của bộ
+function _setBankTotal(set){
+  return getSetBankByTopic(set).reduce(function(a,g){ return a+g.questions.length; },0);
+}
+
+// ── Sinh các MÃ ĐỀ (variant papers) cho bộ đề ──
+// examCount mã đề, mỗi mã là 1 đề hoàn chỉnh (đảo câu + đảo phương án).
+// Trả về [{code, questions:[{...q, shuffledOpts:[{letter,text,origLetter}], correctIdx}]}]
+function generatePapers(set, opts){
+  opts = opts || {};
+  var shuffleOptions = opts.shuffleOptions !== false; // mặc định đảo phương án
+  var allQs = DB.get('questions') || [];
+  var cfg = DB.get('config') || {};
+  var n = set.examCount || 1;
+  var papers = [];
+  function shuffle(a){ return a.slice().sort(function(){ return Math.random()-0.5; }); }
+  for (var k=0; k<n; k++){
+    // buildExamQuestions đã tôn trọng pool + cấu trúc chủ đề
+    var qs = buildExamQuestions(allQs, set, cfg);
+    var prepared = qs.map(function(q){
+      var letters = _OPT_LETTERS.slice();
+      var order = shuffleOptions ? shuffle(letters) : letters;
+      var shuffledOpts = order.map(function(L){ return { origLetter:L, text:_optOf(q,L) }; });
+      // gán lại nhãn A/B/C/D theo vị trí mới + tìm đáp án đúng
+      var correctIdx = 0;
+      shuffledOpts.forEach(function(o,idx){ o.letter=_OPT_LETTERS[idx]; if(o.origLetter===q.correct) correctIdx=idx; });
+      return { id:q.id, content:q.content, topic:q.topic, level:q.level, score:q.score,
+               opts:shuffledOpts, correctIdx:correctIdx, correctLetter:_OPT_LETTERS[correctIdx] };
+    });
+    var code = _paperCode(set, k);
+    papers.push({ code:code, questions:prepared });
+  }
+  return papers;
+}
+
+// Mã đề dạng 3 số: 101, 102, ... (gốc theo thứ tự tạo)
+function _paperCode(set, idx){
+  var base = 101;
+  return String(base + idx);
+}
+
+// ═══════════════ EXCEL (SheetJS) ═══════════════
+function _wsFromAOA(aoa, colWidths){
+  var ws = XLSX.utils.aoa_to_sheet(aoa);
+  if (colWidths) ws['!cols'] = colWidths.map(function(w){ return {wch:w}; });
+  return ws;
+}
+
+// Ngân hàng câu hỏi của bộ đề → Excel
+function exportBankXLSX(setId, withAnswer){
+  var set = _findSet(setId); if(!set){ toast('Không tìm thấy bộ đề','error'); return; }
+  var groups = getSetBankByTopic(set);
+  var wb = XLSX.utils.book_new();
+  var head = ['STT','Mã câu','Chủ đề','Nội dung câu hỏi','A','B','C','D'];
+  if (withAnswer) head.push('Đáp án');
+  var aoa = [
+    ['NGÂN HÀNG CÂU HỎI - '+(set.name||'')],
+    [(set.examTitle||set.name||'')+'  |  Xuất: '+new Date().toLocaleString('vi-VN')],
+    [],
+    head
+  ];
+  var stt=0;
+  groups.forEach(function(g){
+    aoa.push(['▶ CHỦ ĐỀ: '+g.topic+'  ('+g.questions.length+' câu)']);
+    g.questions.forEach(function(q){
+      stt++;
+      var row=[stt, q.id, q.topic, q.content, q.a, q.b, q.c, q.d];
+      if (withAnswer) row.push(q.correct);
+      aoa.push(row);
+    });
+    aoa.push([]);
+  });
+  var ws = _wsFromAOA(aoa, [6,12,16,50,22,22,22,22,8]);
+  XLSX.utils.book_append_sheet(wb, ws, 'Ngân hàng câu hỏi');
+  XLSX.writeFile(wb, _safeFile('NganHangCauHoi_'+(set.name||'bo-de'))+'.xlsx');
+  addLog('EXPORT','Xuất Excel ngân hàng câu hỏi bộ đề: '+(set.name||setId)+(withAnswer?' (kèm đáp án)':''));
+  toast('Đã xuất Excel ngân hàng câu hỏi'+(withAnswer?' kèm đáp án':''),'success');
+}
+
+// Đề thi theo từng mã → Excel (mỗi mã 1 sheet)
+function exportPapersXLSX(setId, withAnswer, shuffleOptions){
+  var set = _findSet(setId); if(!set){ toast('Không tìm thấy bộ đề','error'); return; }
+  var papers = generatePapers(set, {shuffleOptions:shuffleOptions});
+  if (!papers.length || !papers[0].questions.length){ toast('Không đủ câu hỏi để tạo đề','error'); return; }
+  var wb = XLSX.utils.book_new();
+  papers.forEach(function(p){
+    var aoa = [
+      [(set.examTitle||set.name||'ĐỀ THI')],
+      ['Mã đề: '+p.code+'   |   Thời gian: '+(set.timeLimit||'')+' phút   |   Số câu: '+p.questions.length],
+      [],
+      ['Câu','Nội dung','A','B','C','D'].concat(withAnswer?['Đáp án']:[])
+    ];
+    p.questions.forEach(function(q,i){
+      var row=[i+1, q.content, q.opts[0].text, q.opts[1].text, q.opts[2].text, q.opts[3].text];
+      if (withAnswer) row.push(q.correctLetter);
+      aoa.push(row);
+    });
+    if (withAnswer){
+      aoa.push([]);
+      aoa.push(['ĐÁP ÁN MÃ ĐỀ '+p.code]);
+      var keyRow=[]; p.questions.forEach(function(q,i){ keyRow.push((i+1)+'.'+q.correctLetter); });
+      // chia đáp án thành các dòng 10 câu
+      for (var s=0;s<keyRow.length;s+=10){ aoa.push([keyRow.slice(s,s+10).join('   ')]); }
+    }
+    var ws=_wsFromAOA(aoa,[6,50,20,20,20,20,8]);
+    XLSX.utils.book_append_sheet(wb, ws, 'Mã '+p.code);
+  });
+  // Sheet tổng hợp đáp án tất cả mã (nếu kèm đáp án)
+  if (withAnswer){
+    var keyAoa=[['BẢNG ĐÁP ÁN TỔNG HỢP - '+(set.name||'')],[],['Mã đề \\\\ Câu'].concat(papers[0].questions.map(function(_,i){return (i+1);}))];
+    papers.forEach(function(p){ keyAoa.push([p.code].concat(p.questions.map(function(q){return q.correctLetter;}))); });
+    var wsk=_wsFromAOA(keyAoa,[12].concat(papers[0].questions.map(function(){return 5;})));
+    XLSX.utils.book_append_sheet(wb, wsk, 'Đáp án tổng hợp');
+  }
+  XLSX.writeFile(wb, _safeFile('DeThi_'+(set.name||'bo-de'))+'.xlsx');
+  addLog('EXPORT','Xuất Excel '+papers.length+' mã đề: '+(set.name||setId)+(withAnswer?' (kèm đáp án)':''));
+  toast('Đã xuất Excel '+papers.length+' mã đề'+(withAnswer?' kèm đáp án':''),'success');
+}
+
+// ═══════════════ WORD (.doc qua HTML) ═══════════════
+function _downloadDoc(htmlBody, filename){
+  var html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8">'
+    + '<style>'
+    + 'body{font-family:"Times New Roman",serif;font-size:13pt;line-height:1.45;color:#000}'
+    + 'h1{font-size:15pt;text-align:center;margin:0}h2{font-size:13pt;margin:4pt 0}'
+    + '.center{text-align:center}.b{font-weight:bold}.muted{color:#444;font-size:11pt}'
+    + 'table{border-collapse:collapse;width:100%}td,th{border:1px solid #000;padding:4pt 6pt;font-size:12pt;vertical-align:top}'
+    + '.q{margin:8pt 0}.qh{font-weight:bold}.opt{margin-left:18pt}'
+    + '.topic{font-weight:bold;background:#eee;padding:4pt 6pt;margin-top:10pt}'
+    + '.key{border:1px solid #000;padding:6pt;margin-top:8pt}'
+    + '.hr{border-top:1px solid #000;margin:8pt 0}'
+    + '</style></head><body>'+htmlBody+'</body></html>';
+  var blob = new Blob(['\ufeff'+html], {type:'application/msword'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a'); a.href=url; a.download=filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); },1000);
+}
+
+function exportBankDOC(setId, withAnswer){
+  var set = _findSet(setId); if(!set){ toast('Không tìm thấy bộ đề','error'); return; }
+  var groups = getSetBankByTopic(set);
+  var b = '<h1>NGÂN HÀNG CÂU HỎI</h1>';
+  b += '<p class="center b">'+esc(set.examTitle||set.name||'')+'</p>';
+  b += '<p class="center muted">Tổng: '+_setBankTotal(set)+' câu'+(withAnswer?' · có đáp án':'')+' · Xuất: '+new Date().toLocaleString('vi-VN')+'</p>';
+  var stt=0;
+  groups.forEach(function(g){
+    b += '<div class="topic">CHỦ ĐỀ: '+esc(g.topic)+' ('+g.questions.length+' câu)</div>';
+    g.questions.forEach(function(q){
+      stt++;
+      b += '<div class="q"><span class="qh">Câu '+stt+' <span class="muted">['+esc(q.id)+']</span>:</span> '+esc(q.content)+'</div>';
+      ['A','B','C','D'].forEach(function(L){
+        var isC = withAnswer && q.correct===L;
+        b += '<div class="opt"'+(isC?' style="font-weight:bold;color:#0a7d32"':'')+'>'+L+'. '+esc(_optOf(q,L))+(isC?'  ✓':'')+'</div>';
+      });
+    });
+  });
+  _downloadDoc(b, _safeFile('NganHangCauHoi_'+(set.name||'bo-de'))+'.doc');
+  addLog('EXPORT','Xuất Word ngân hàng câu hỏi: '+(set.name||setId)+(withAnswer?' (kèm đáp án)':''));
+  toast('Đã xuất Word ngân hàng câu hỏi'+(withAnswer?' kèm đáp án':''),'success');
+}
+
+// Đề thi theo mã → Word (mỗi mã 1 trang, ngắt trang giữa các mã)
+function exportPapersDOC(setId, withAnswer, shuffleOptions){
+  var set = _findSet(setId); if(!set){ toast('Không tìm thấy bộ đề','error'); return; }
+  var papers = generatePapers(set, {shuffleOptions:shuffleOptions});
+  if (!papers.length || !papers[0].questions.length){ toast('Không đủ câu hỏi để tạo đề','error'); return; }
+  var cfg = DB.get('config')||{};
+  var org = (cfg.orgName||'ĐƠN VỊ TỔ CHỨC').toUpperCase();
+  var b='';
+  papers.forEach(function(p, pi){
+    if (pi>0) b += '<br style="page-break-before:always">';
+    b += _paperHeaderHTML(set, p, org);
+    p.questions.forEach(function(q,i){
+      b += '<div class="q"><span class="qh">Câu '+(i+1)+':</span> '+esc(q.content)+'</div>';
+      q.opts.forEach(function(o){
+        var isC = withAnswer && o.letter===q.correctLetter;
+        b += '<div class="opt"'+(isC?' style="font-weight:bold;color:#0a7d32"':'')+'>'+o.letter+'. '+esc(o.text)+(isC?'  ✓':'')+'</div>';
+      });
+    });
+    b += '<div class="hr"></div><p class="center muted">--- HẾT MÃ ĐỀ '+p.code+' ---</p>';
+    if (withAnswer){
+      b += '<div class="key"><span class="b">ĐÁP ÁN MÃ ĐỀ '+p.code+':</span><br>'+_keyLineHTML(p)+'</div>';
+    }
+  });
+  _downloadDoc(b, _safeFile('DeThi_'+(set.name||'bo-de'))+'.doc');
+  addLog('EXPORT','Xuất Word '+papers.length+' mã đề: '+(set.name||setId)+(withAnswer?' (kèm đáp án)':''));
+  toast('Đã xuất Word '+papers.length+' mã đề'+(withAnswer?' kèm đáp án':''),'success');
+}
+
+function _paperHeaderHTML(set, p, org){
+  var cfg = DB.get('config')||{};
+  var h = '<table style="border:none;margin-bottom:6pt"><tr>'
+    + '<td style="border:none;width:55%;text-align:center;vertical-align:top">'
+      + '<div class="b">'+esc(org)+'</div>'
+      + '<div style="border-top:1px solid #000;width:60%;margin:2pt auto"></div>'
+      + '<div class="muted">Kỳ thi: '+esc(set.examTitle||set.name||'')+'</div>'
+    + '</td>'
+    + '<td style="border:none;width:45%;text-align:center;vertical-align:top">'
+      + '<div class="b">ĐỀ THI</div>'
+      + '<div class="muted">Thời gian: '+(set.timeLimit||'')+' phút</div>'
+      + '<div class="b" style="font-size:14pt;margin-top:4pt">MÃ ĐỀ: '+p.code+'</div>'
+    + '</td></tr></table>';
+  h += '<table style="margin-bottom:8pt"><tr>'
+    + '<td style="width:60%">Họ và tên: ....................................................</td>'
+    + '<td>SBD: ...................</td></tr>'
+    + '<tr><td>Đơn vị: ....................................................</td>'
+    + '<td>Ngày thi: ...............</td></tr></table>';
+  h += '<p class="muted" style="text-align:justify"><i>Hướng dẫn: Chọn phương án đúng nhất (A, B, C hoặc D) cho mỗi câu. Tô/khoanh đáp án vào phiếu trả lời.</i></p>';
+  return h;
+}
+
+function _keyLineHTML(p){
+  var parts=[]; p.questions.forEach(function(q,i){ parts.push('<b>'+(i+1)+'</b>-'+q.correctLetter); });
+  return parts.join(' &nbsp; ');
+}
+
+// ═══════════════ PDF (qua cửa sổ in của trình duyệt — giữ nguyên tiếng Việt) ═══════════════
+function _printHTML(title, bodyHTML){
+  var win = window.open('', '_blank');
+  if (!win){ toast('Trình duyệt chặn cửa sổ in. Hãy cho phép popup rồi thử lại.','error'); return; }
+  var css = '@page{size:A4;margin:14mm}'
+    + '*{box-sizing:border-box}body{font-family:"Times New Roman",serif;font-size:13pt;line-height:1.45;color:#000;margin:0}'
+    + 'h1{font-size:16pt;text-align:center;margin:0 0 4pt}'
+    + '.center{text-align:center}.b{font-weight:bold}.muted{color:#333;font-size:10.5pt}'
+    + 'table{border-collapse:collapse;width:100%}td,th{border:1px solid #000;padding:4px 6px;font-size:11.5pt;vertical-align:top}'
+    + '.noborder td{border:none;padding:1px 4px}'
+    + '.q{margin:7pt 0 2pt}.qh{font-weight:bold}.opt{margin-left:16pt;margin-top:1pt}'
+    + '.topic{font-weight:bold;background:#eee;padding:4px 6px;margin-top:10pt;border:1px solid #999}'
+    + '.key{border:1px solid #000;padding:6px;margin-top:8pt}'
+    + '.hr{border-top:1px solid #000;margin:8pt 0}'
+    + '.pagebreak{page-break-before:always}'
+    + '.correct{font-weight:bold;color:#0a7d32}'
+    + '.toolbar{position:fixed;top:0;left:0;right:0;background:#1a3a6b;color:#fff;padding:10px 16px;display:flex;gap:10px;align-items:center;justify-content:center;font-family:Arial,sans-serif;font-size:14px;z-index:99}'
+    + '.toolbar button{background:#f0a500;color:#1a2a4a;border:none;padding:8px 18px;border-radius:6px;font-weight:700;cursor:pointer;font-size:14px}'
+    + '.toolbar .x{background:transparent;color:#fff;border:1px solid #fff}'
+    + '@media print{.toolbar{display:none}.content{padding-top:0!important}}'
+    + '.content{padding-top:52px}';
+  var doc = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+esc(title)+'</title><style>'+css+'</style></head><body>'
+    + '<div class="toolbar"><span>👉 Chọn <b>In → Lưu dạng PDF</b> để tải file PDF</span>'
+    + '<button onclick="window.print()">🖨️ In / Lưu PDF</button>'
+    + '<button class="x" onclick="window.close()">Đóng</button></div>'
+    + '<div class="content">'+bodyHTML+'</div></body></html>';
+  win.document.open(); win.document.write(doc); win.document.close();
+}
+
+function exportBankPDF(setId, withAnswer){
+  var set = _findSet(setId); if(!set){ toast('Không tìm thấy bộ đề','error'); return; }
+  var groups = getSetBankByTopic(set);
+  var b = '<h1>NGÂN HÀNG CÂU HỎI</h1>';
+  b += '<p class="center b">'+esc(set.examTitle||set.name||'')+'</p>';
+  b += '<p class="center muted">Tổng: '+_setBankTotal(set)+' câu'+(withAnswer?' · có đáp án':'')+' · Xuất: '+new Date().toLocaleString('vi-VN')+'</p>';
+  var stt=0;
+  groups.forEach(function(g){
+    b += '<div class="topic">CHỦ ĐỀ: '+esc(g.topic)+' ('+g.questions.length+' câu)</div>';
+    g.questions.forEach(function(q){
+      stt++;
+      b += '<div class="q"><span class="qh">Câu '+stt+' <span class="muted">['+esc(q.id)+']</span>:</span> '+esc(q.content)+'</div>';
+      ['A','B','C','D'].forEach(function(L){
+        var isC = withAnswer && q.correct===L;
+        b += '<div class="opt'+(isC?' correct':'')+'">'+L+'. '+esc(_optOf(q,L))+(isC?'  ✓':'')+'</div>';
+      });
+    });
+  });
+  _printHTML('Ngân hàng câu hỏi - '+(set.name||''), b);
+  addLog('EXPORT','Xuất PDF ngân hàng câu hỏi: '+(set.name||setId)+(withAnswer?' (kèm đáp án)':''));
+}
+
+function exportPapersPDF(setId, withAnswer, shuffleOptions){
+  var set = _findSet(setId); if(!set){ toast('Không tìm thấy bộ đề','error'); return; }
+  var papers = generatePapers(set, {shuffleOptions:shuffleOptions});
+  if (!papers.length || !papers[0].questions.length){ toast('Không đủ câu hỏi để tạo đề','error'); return; }
+  var cfg = DB.get('config')||{};
+  var org = (cfg.orgName||'ĐƠN VỊ TỔ CHỨC').toUpperCase();
+  var b='';
+  papers.forEach(function(p, pi){
+    b += '<div'+(pi>0?' class="pagebreak"':'')+'>';
+    b += _paperHeaderHTML(set, p, org).replace(/style="border:none;/g,'style="border:none!important;');
+    p.questions.forEach(function(q,i){
+      b += '<div class="q"><span class="qh">Câu '+(i+1)+':</span> '+esc(q.content)+'</div>';
+      q.opts.forEach(function(o){
+        var isC = withAnswer && o.letter===q.correctLetter;
+        b += '<div class="opt'+(isC?' correct':'')+'">'+o.letter+'. '+esc(o.text)+(isC?'  ✓':'')+'</div>';
+      });
+    });
+    b += '<div class="hr"></div><p class="center muted">--- HẾT MÃ ĐỀ '+p.code+' ---</p>';
+    if (withAnswer){
+      b += '<div class="key"><span class="b">ĐÁP ÁN MÃ ĐỀ '+p.code+':</span><br>'+_keyLineHTML(p)+'</div>';
+    }
+    b += '</div>';
+  });
+  _printHTML('Đề thi - '+(set.name||''), b);
+  addLog('EXPORT','Xuất PDF '+papers.length+' mã đề: '+(set.name||setId)+(withAnswer?' (kèm đáp án)':''));
+}
+
+// Tên file an toàn
+function _safeFile(s){
+  return _deaccent(String(s||'file')).replace(/[^a-zA-Z0-9_-]+/g,'_').replace(/_+/g,'_').replace(/^_|_$/g,'') || 'file';
+}
+
+// ═══════════════ MODAL XUẤT / IN ═══════════════
+function openExportModal(setId){
+  var set = _findSet(setId); if(!set){ toast('Không tìm thấy bộ đề','error'); return; }
+  S.exportSetId = setId;
+  var bankTotal = _setBankTotal(set);
+  var m = document.getElementById('ex-modal');
+  document.getElementById('ex-title').textContent = 'Xuất / In: ' + (set.name||'');
+  document.getElementById('ex-sub').innerHTML =
+    (set.examCount||0)+' mã đề · '+(set.timeLimit||0)+' phút · '+(set.totalQ||0)+' câu/đề · Ngân hàng: <b>'+bankTotal+'</b> câu'
+    + (set.noOverlap?' · <span style="color:var(--primary)"><i class="fas fa-shuffle"></i> không trùng</span>':'');
+  m.classList.add('show');
+}
+function closeExportModal(){ document.getElementById('ex-modal').classList.remove('show'); }
+
+// Router gọi từ nút trong modal
+function doExport(kind, fmt){
+  var setId = S.exportSetId;
+  if (!setId){ toast('Chưa chọn bộ đề','error'); return; }
+  if (kind==='bank'){
+    var wa = document.getElementById('ex-bank-answer').checked;
+    if (fmt==='xlsx') exportBankXLSX(setId, wa);
+    else if (fmt==='doc') exportBankDOC(setId, wa);
+    else if (fmt==='pdf') exportBankPDF(setId, wa);
+  } else {
+    var wp = document.getElementById('ex-paper-answer').checked;
+    var sh = document.getElementById('ex-paper-shuffle').checked;
+    if (fmt==='xlsx') exportPapersXLSX(setId, wp, sh);
+    else if (fmt==='doc') exportPapersDOC(setId, wp, sh);
+    else if (fmt==='pdf') exportPapersPDF(setId, wp, sh);
   }
 }
 
