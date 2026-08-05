@@ -3249,6 +3249,11 @@ function rdQuestionHtml(d, i) {
   if (!d.answered) {
     h += '<div style="font-size:.79rem;color:var(--text-muted);margin-top:6px;font-style:italic">Thí sinh không chọn đáp án nào.</div>';
   }
+  if (d._others && d._others.length) {
+    h += '<div style="font-size:.76rem;color:var(--text-muted);margin-top:8px;line-height:1.6">' +
+         '<em>Phương án khác của câu này (lấy từ ngân hàng câu hỏi — không rõ nhãn vì đề có đảo đáp án):</em><br>' +
+         d._others.map(function(t){ return '• '+esc(t); }).join('<br>') + '</div>';
+  }
   var meta = [];
   if (d.topic) meta.push('Chủ đề: '+esc(d.topic));
   if (d.level) meta.push('Mức độ: '+esc(d.level));
@@ -3617,6 +3622,7 @@ function _rptDestroyCharts() {
 
 // Gom số liệu thống kê phục vụ cả hiển thị lẫn xuất file
 function computeReportStats() {
+  repairDetailQids();
   var results = DB.get('results') || [];
   var questions = DB.get('questions') || [];
   var cfg = DB.get('config') || {};
@@ -3663,11 +3669,16 @@ function computeReportStats() {
   });
   results.forEach(function(r){
     (r.details||[]).forEach(function(d){
-      if (!qMap[d.qid]) {
-        qMap[d.qid] = { qid:d.qid, content:d.content||'', topic:d.topic||'', level:d.level||'',
-                        attempts:0, correct:0, answered:0 };
+      if (!d.content && (d.qid == null || d.qid === '')) return; // dòng rỗng → bỏ qua
+      var key = statKeyOfDetail(d);
+      if (!qMap[key]) {
+        // Câu có trong bài làm nhưng không còn trong ngân hàng (đã xóa/sửa nội dung)
+        qMap[key] = { qid: (d.qid != null && d.qid !== '') ? d.qid : '(ngoài ngân hàng)',
+                      content:d.content||'', topic:d.topic||'', level:d.level||'',
+                      attempts:0, correct:0, answered:0 };
       }
-      var m = qMap[d.qid];
+      var m = qMap[key];
+      if (!m.content && d.content) m.content = d.content;
       m.attempts++;
       if (d.answered) m.answered++;
       if (d.isOk) m.correct++;
@@ -4663,6 +4674,65 @@ function gsFetchTabRows(sheetId, tab) {
   }).catch(function(){ return []; });
 }
 
+// ── Đối chiếu câu hỏi theo NỘI DUNG để tìm lại mã câu (qid) ────────────────
+// Dòng chi tiết trên Google Sheet không có cột mã câu, nên khi dựng lại bài làm
+// phải tra ngược nội dung câu hỏi trong ngân hàng đề. Thiếu bước này, mọi câu
+// đều mang qid = undefined và bị gộp thành MỘT dòng "undefined" ở trang thống kê.
+var _QIDX = null, _QIDX_LEN = -1;
+function normQContent(t) {
+  return String(t == null ? '' : t).replace(/\s+/g,' ').trim().toLowerCase();
+}
+function questionIndexByContent() {
+  var qs = DB.get('questions') || [];
+  if (_QIDX && _QIDX_LEN === qs.length) return _QIDX;
+  var idx = {};
+  qs.forEach(function(q){
+    var k = normQContent(q.content);
+    if (k && !idx[k]) idx[k] = q;
+  });
+  _QIDX = idx; _QIDX_LEN = qs.length;
+  return idx;
+}
+function findQuestionByContent(content) {
+  var k = normQContent(content);
+  if (!k) return null;
+  return questionIndexByContent()[k] || null;
+}
+// Khóa gom nhóm cho thống kê: ưu tiên mã câu thật, sau đó tra theo nội dung,
+// cuối cùng mới dùng chính nội dung làm khóa — không bao giờ trả về undefined.
+function statKeyOfDetail(d) {
+  if (d.qid != null && d.qid !== '') return String(d.qid);
+  var q = findQuestionByContent(d.content);
+  if (q) return String(q.id);
+  var k = normQContent(d.content);
+  return k ? 'nd:' + k : 'nd:(không rõ nội dung)';
+}
+// Vá 1 lần cho các bài làm đã tải về trước đó nhưng thiếu mã câu
+var _QID_REPAIRED = false;
+function repairDetailQids() {
+  if (_QID_REPAIRED) return;
+  _QID_REPAIRED = true;
+  var results = DB.get('results') || [];
+  var changed = 0;
+  results.forEach(function(r){
+    (r.details||[]).forEach(function(d){
+      if (d.qid != null && d.qid !== '') return;
+      var q = findQuestionByContent(d.content);
+      if (q) {
+        d.qid = q.id;
+        if (!d.topic) d.topic = q.topic || '';
+        if (!d.level) d.level = q.level || '';
+        changed++;
+      }
+    });
+  });
+  if (changed) {
+    DB._syncSuppress = true;
+    try { DB.set('results', results); } finally { DB._syncSuppress = false; }
+    addLog('SHEETS','Vá mã câu cho '+changed+' câu trả lời tải từ Google Sheet');
+  }
+}
+
 // ── Khóa nhận dạng 1 bài làm: (thời điểm nộp | họ tên | mã đề) ──────────────
 // Chuẩn hóa mọi kiểu thời gian (Date, ISO, "HH:MM:SS d/m/yyyy") về mốc giây nên
 // dòng tổng hợp và dòng chi tiết trong Sheet luôn ghép được với nhau.
@@ -4712,7 +4782,7 @@ function gsParseDetailRows(rows) {
     if (isNaN(scNum)) scNum = null;
 
     // Ưu tiên JSON đầy đủ (kết quả nộp từ bản nâng cấp này)
-    var opts = null, partial = true, topic = '', level = '';
+    var opts = null, partial = true, topic = '', level = '', jsonQid = '';
     // Quét cả hàng để tìm ô JSON (phòng khi Sheet cũ có số cột header khác)
     var raw = v(13);
     if (!raw || raw.charAt(0) !== '{') {
@@ -4728,6 +4798,7 @@ function gsParseDetailRows(rows) {
         if (pj && pj.o && pj.o.length) {
           opts = pj.o.map(function(o){ return { letter:String(o.l||'').toUpperCase(), text:String(o.t==null?'':o.t) }; });
           partial = false; topic = pj.tp||''; level = pj.lv||'';
+          if (pj.qi != null && pj.qi !== '') jsonQid = pj.qi;
         }
       } catch(e){}
     }
@@ -4741,11 +4812,38 @@ function gsParseDetailRows(rows) {
 
     var answered = uL ? (st ? st.indexOf('trống') === -1 : true) : false;
     var isOk = st ? (st.indexOf('đúng') > -1) : (!!uL && uL === cL);
+
+    // Tra ngược ngân hàng câu hỏi để lấy mã câu / chủ đề / mức độ.
+    // (Không lấy lại nhãn A-B-C-D từ ngân hàng vì đề thi có ĐẢO thứ tự đáp án
+    //  theo từng thí sinh — nhãn trong Sheet mới là nhãn thí sinh nhìn thấy.)
+    var qid = (jsonQid || '');
+    var bank = findQuestionByContent(content);
+    if (!qid && bank) qid = bank.id;
+    if (bank) {
+      if (!topic) topic = bank.topic || '';
+      if (!level) level = bank.level || '';
+      if (scNum == null && bank.score != null) scNum = parseFloat(bank.score);
+    }
+    var others = [];
+    if (partial && bank) {
+      var taken = {};
+      opts.forEach(function(o){ taken[normQContent(o.text)] = 1; });
+      ['a','b','c','d','A','B','C','D'].forEach(function(k){
+        var tx = bank[k];
+        if (tx == null || String(tx).trim() === '') return;
+        var nk = normQContent(tx);
+        if (taken[nk]) return;
+        taken[nk] = 1; others.push(String(tx));
+      });
+    }
+
     g.items.push({ no:qNo, d:{
+      qid: qid || null,
       content: content, options: opts,
       correct: cL || null, userAns: uL || null,
       answered: answered, isOk: !!isOk, score: scNum,
-      topic: topic, level: level, _partial: partial
+      topic: topic, level: level, _partial: partial,
+      _others: others.length ? others : null
     }});
   });
 
